@@ -1,4 +1,4 @@
-# Makefile
+# testBtrfs.py
 
 #/***************************************************************************
 # *   Copyright (C) 2014 deso (deso@posteo.net)                             *
@@ -17,10 +17,37 @@
 # *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
 # ***************************************************************************/
 
+"""Test btrfs wrapping functionality."""
 
-.PHONY: test
-test: ROOT := $(shell pwd)/..
-test:
-	@PYTHONPATH="$(ROOT)/execute/src:$(ROOT)/btrfs-backup/src:${PYTHONPATH}"\
-		python -m unittest --verbose --buffer\
-			src/deso/btrfs/test/testBtrfs.py
+from deso.btrfs.test.btrfsTest import (
+  BtrfsDevice,
+  Mount,
+)
+from unittest import (
+  TestCase,
+  main,
+)
+
+
+class TestBtrfsDevice(TestCase):
+  """A test case for btrfs loop device related functionality."""
+  def testBtrfsDeviceCreation(self):
+    """Verify that we can create a btrfs formatted loop back device."""
+    def testReadWrite(name, string):
+      """Open a file, write something into it and read it back."""
+      with open(mount.path(name), "w+") as handle:
+        handle.write(string)
+        handle.seek(0)
+        self.assertEqual(handle.read(), string)
+
+    with BtrfsDevice() as btrfs:
+      with Mount(btrfs.device()) as mount:
+        # We got the btrfs loop back device created and mounted
+        # somewhere. Try creating a file, writing something to it, and
+        # reading the data back to verify that everything actually
+        # works.
+        testReadWrite(mount.path("test.txt"), "testString98765")
+
+
+if __name__ == "__main__":
+  main()
