@@ -32,6 +32,9 @@ from deso.btrfs.test.btrfsTest import (
   createDir,
   createFile,
 )
+from deso.execute import (
+  execute,
+)
 from os.path import (
   isdir,
   isfile,
@@ -68,7 +71,7 @@ class TestBtrfsSubvolume(BtrfsTestCase):
     """Verify that we can create a btrfs subvolume."""
     # Create a subvolume and some files in it.
     with alias(self._mount) as m:
-      create(m.path("root"))
+      execute(*create(m.path("root")))
       createDir(m.path("root", "dir"))
       createFile(m.path("root", "dir", "file"))
 
@@ -80,9 +83,9 @@ class TestBtrfsSubvolume(BtrfsTestCase):
   def testBtrfsSubvolumeDelete(self):
     """Verify that we can delete a btrfs subvolume."""
     with alias(self._mount) as m:
-      create(m.path("root"))
+      execute(*create(m.path("root")))
       createFile(m.path("root", "file"))
-      delete(m.path("root"))
+      execute(*delete(m.path("root")))
 
       self.assertFalse(isdir(m.path("root")))
       self.assertFalse(isfile(m.path("root", "file")))
@@ -100,11 +103,11 @@ class TestBtrfsSubvolume(BtrfsTestCase):
     data = b"test-string-to-read-from-snapshot"
 
     with alias(self._mount) as m:
-      create(m.path("root"))
+      execute(*create(m.path("root")))
       createFile(m.path("root", "file"), data)
 
-      snapshot(m.path("root"),
-               m.path("root_snapshot"))
+      execute(*snapshot(m.path("root"),
+                        m.path("root_snapshot")))
 
       # Verify that the snapshot file and the original have the same
       # content.
@@ -115,11 +118,11 @@ class TestBtrfsSubvolume(BtrfsTestCase):
   def testBtrfsSnapshotReadOnly(self):
     """Verify that a created snapshot is read-only."""
     with alias(self._mount) as m:
-      create(m.path("root"))
+      execute(*create(m.path("root")))
       createFile(m.path("root", "file"))
 
-      snapshot(m.path("root"),
-               m.path("root_snapshot"))
+      execute(*snapshot(m.path("root"),
+                        m.path("root_snapshot")))
 
       # Creating a new file in the read-only snapshot should raise
       # 'OSError: [Errno 30] Read-only file system'.

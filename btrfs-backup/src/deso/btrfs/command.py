@@ -17,31 +17,26 @@
 # *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
 # ***************************************************************************/
 
-"""Functions for executing btrfs commands.
+"""Functions for creating btrfs commands ready for execution.
 
   In order to perform btrfs related actions we interface with the
   btrfs(8) command. This command provides the necessary functionality we
   require throughout the program.
 """
 
-from deso.execute import (
-  execute,
-)
-
-
 _BTRFS = "/sbin/btrfs"
 
 
 def create(subvolume):
-  """Create a new btrfs subvolume."""
-  execute(_BTRFS, "subvolume", "create", subvolume)
+  """Retrieve the command to create a new btrfs subvolume."""
+  return [_BTRFS, "subvolume", "create", subvolume]
 
 
 def delete(subvolume):
-  """Delete a btrfs subvolume."""
-  execute(_BTRFS, "subvolume", "delete", subvolume)
+  """Retrieve the command to delete a btrfs subvolume."""
+  return [_BTRFS, "subvolume", "delete", subvolume]
 
 
 def snapshot(source, destination):
-  """Create a read-only snapshot of a subvolume."""
-  execute(_BTRFS, "subvolume", "snapshot", "-r", source, destination)
+  """Retrieve the command to create a read-only snapshot of a subvolume."""
+  return [_BTRFS, "subvolume", "snapshot", "-r", source, destination]
