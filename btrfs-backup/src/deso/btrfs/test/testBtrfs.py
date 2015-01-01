@@ -25,6 +25,7 @@ from deso.btrfs.command import (
   snapshot,
 )
 from deso.btrfs.test.btrfsTest import (
+  alias,
   BtrfsDevice,
   BtrfsTestCase,
   Mount,
@@ -66,23 +67,25 @@ class TestBtrfsSubvolume(BtrfsTestCase):
   def testBtrfsSubvolumeCreate(self):
     """Verify that we can create a btrfs subvolume."""
     # Create a subvolume and some files in it.
-    create(self._mount.path("root"))
-    createDir(self._mount.path("root", "dir"))
-    createFile(self._mount.path("root", "dir", "file"))
+    with alias(self._mount) as m:
+      create(m.path("root"))
+      createDir(m.path("root", "dir"))
+      createFile(m.path("root", "dir", "file"))
 
-    self.assertTrue(isdir(self._mount.path("root")))
-    self.assertTrue(isdir(self._mount.path("root", "dir")))
-    self.assertTrue(isfile(self._mount.path("root", "dir", "file")))
+      self.assertTrue(isdir(m.path("root")))
+      self.assertTrue(isdir(m.path("root", "dir")))
+      self.assertTrue(isfile(m.path("root", "dir", "file")))
 
 
   def testBtrfsSubvolumeDelete(self):
     """Verify that we can delete a btrfs subvolume."""
-    create(self._mount.path("root"))
-    createFile(self._mount.path("root", "file"))
-    delete(self._mount.path("root"))
+    with alias(self._mount) as m:
+      create(m.path("root"))
+      createFile(m.path("root", "file"))
+      delete(m.path("root"))
 
-    self.assertFalse(isdir(self._mount.path("root")))
-    self.assertFalse(isfile(self._mount.path("root", "file")))
+      self.assertFalse(isdir(m.path("root")))
+      self.assertFalse(isfile(m.path("root", "file")))
 
 
   def testBtrfsSnapshot(self):
@@ -96,31 +99,33 @@ class TestBtrfsSubvolume(BtrfsTestCase):
     """
     data = b"test-string-to-read-from-snapshot"
 
-    create(self._mount.path("root"))
-    createFile(self._mount.path("root", "file"), data)
+    with alias(self._mount) as m:
+      create(m.path("root"))
+      createFile(m.path("root", "file"), data)
 
-    snapshot(self._mount.path("root"),
-             self._mount.path("root_snapshot"))
+      snapshot(m.path("root"),
+               m.path("root_snapshot"))
 
-    # Verify that the snapshot file and the original have the same
-    # content.
-    with open(self._mount.path("root_snapshot", "file"), "r") as handle:
-      self.assertEqual(handle.read(), data.decode("utf-8"))
+      # Verify that the snapshot file and the original have the same
+      # content.
+      with open(m.path("root_snapshot", "file"), "r") as handle:
+        self.assertEqual(handle.read(), data.decode("utf-8"))
 
 
   def testBtrfsSnapshotReadOnly(self):
     """Verify that a created snapshot is read-only."""
-    create(self._mount.path("root"))
-    createFile(self._mount.path("root", "file"))
+    with alias(self._mount) as m:
+      create(m.path("root"))
+      createFile(m.path("root", "file"))
 
-    snapshot(self._mount.path("root"),
-             self._mount.path("root_snapshot"))
+      snapshot(m.path("root"),
+               m.path("root_snapshot"))
 
-    # Creating a new file in the read-only snapshot should raise
-    # 'OSError: [Errno 30] Read-only file system'.
-    regex = "Read-only file"
-    with self.assertRaisesRegex(OSError, regex):
-      createFile(self._mount.path("root_snapshot", "file2"))
+      # Creating a new file in the read-only snapshot should raise
+      # 'OSError: [Errno 30] Read-only file system'.
+      regex = "Read-only file"
+      with self.assertRaisesRegex(OSError, regex):
+        createFile(m.path("root_snapshot", "file2"))
 
 
 if __name__ == "__main__":
