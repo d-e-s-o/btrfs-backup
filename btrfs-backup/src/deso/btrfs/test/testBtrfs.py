@@ -1,7 +1,7 @@
 # testBtrfs.py
 
 #/***************************************************************************
-# *   Copyright (C) 2014 deso (deso@posteo.net)                             *
+# *   Copyright (C) 2014-2015 deso (deso@posteo.net)                        *
 # *                                                                         *
 # *   This program is free software: you can redistribute it and/or modify  *
 # *   it under the terms of the GNU General Public License as published by  *
@@ -19,9 +19,20 @@
 
 """Test btrfs wrapping functionality."""
 
+from deso.btrfs.command import (
+  create,
+  delete,
+)
 from deso.btrfs.test.btrfsTest import (
   BtrfsDevice,
+  BtrfsTestCase,
   Mount,
+  createDir,
+  createFile,
+)
+from os.path import (
+  isdir,
+  isfile,
 )
 from unittest import (
   TestCase,
@@ -47,6 +58,30 @@ class TestBtrfsDevice(TestCase):
         # reading the data back to verify that everything actually
         # works.
         testReadWrite(mount.path("test.txt"), "testString98765")
+
+
+class TestBtrfsSubvolume(BtrfsTestCase):
+  """Test btrfs subvolume functionality."""
+  def testBtrfsSubvolumeCreate(self):
+    """Verify that we can create a btrfs subvolume."""
+    # Create a subvolume and some files in it.
+    create(self._mount.path("root"))
+    createDir(self._mount.path("root", "dir"))
+    createFile(self._mount.path("root", "dir", "file"))
+
+    self.assertTrue(isdir(self._mount.path("root")))
+    self.assertTrue(isdir(self._mount.path("root", "dir")))
+    self.assertTrue(isfile(self._mount.path("root", "dir", "file")))
+
+
+  def testBtrfsSubvolumeDelete(self):
+    """Verify that we can delete a btrfs subvolume."""
+    create(self._mount.path("root"))
+    createFile(self._mount.path("root", "file"))
+    delete(self._mount.path("root"))
+
+    self.assertFalse(isdir(self._mount.path("root")))
+    self.assertFalse(isfile(self._mount.path("root", "file")))
 
 
 if __name__ == "__main__":

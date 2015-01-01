@@ -1,7 +1,7 @@
 # btrfsTest.py
 
 #/***************************************************************************
-# *   Copyright (C) 2014 deso (deso@posteo.net)                             *
+# *   Copyright (C) 2014-2015 deso (deso@posteo.net)                        *
 # *                                                                         *
 # *   This program is free software: you can redistribute it and/or modify  *
 # *   it under the terms of the GNU General Public License as published by  *
@@ -23,6 +23,8 @@
   changes. It contains classes that aid in creating loop back devices,
   formatting them with btrfs along with mounting them in the file
   system, and more.
+  It furthermore makes ready-to-use test case base classes available
+  that contain well defined execution environments.
 """
 
 from deso.execute import (
@@ -30,7 +32,12 @@ from deso.execute import (
   executeAndRead,
 )
 from os import (
+  O_CREAT,
+  O_EXCL,
+  O_RDWR,
   close,
+  mkdir,
+  open as mkfile,
   remove,
   rmdir,
   write,
@@ -42,12 +49,30 @@ from tempfile import (
   mkdtemp,
   mkstemp,
 )
+from unittest import (
+  TestCase,
+)
 
 
 _LOSETUP = "/sbin/losetup"
 _MKBTRFS = "/sbin/mkfs.btrfs"
 _MOUNT = "/bin/mount"
 _UMOUNT = "/bin/umount"
+
+
+def createFile(path, content=None):
+  """Create a file given an absolute path."""
+  fd = mkfile(path, O_CREAT | O_EXCL | O_RDWR)
+  try:
+    if content:
+      write(fd, content)
+  finally:
+    close(fd)
+
+
+def createDir(path):
+  """Create a directory given an absolute path."""
+  mkdir(path)
 
 
 class LoopBackDevice:
@@ -142,3 +167,25 @@ class Mount:
   def path(self, *components):
     """Form an absolute path by combining the given components."""
     return join(self._directory, *components)
+
+
+class BtrfsTestCase(TestCase):
+  """A test case subclass that provides a mounted btrfs device."""
+  def setUp(self):
+    """Create a btrfs device and mount it ready for use."""
+    super().setUp()
+
+    self._device = BtrfsDevice()
+    try:
+      self._mount = Mount(self._device.device())
+    except:
+      self._device.destroy()
+      raise
+
+
+  def tearDown(self):
+    """Unmount the btrfs device and destroy it."""
+    self._mount.destroy()
+    self._device.destroy()
+
+    super().tearDown()
