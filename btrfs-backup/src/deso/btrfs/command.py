@@ -40,3 +40,8 @@ def create(subvolume):
 def delete(subvolume):
   """Delete a btrfs subvolume."""
   execute(_BTRFS, "subvolume", "delete", subvolume)
+
+
+def snapshot(source, destination):
+  """Create a read-only snapshot of a subvolume."""
+  execute(_BTRFS, "subvolume", "snapshot", "-r", source, destination)

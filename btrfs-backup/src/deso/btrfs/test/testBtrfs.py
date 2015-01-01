@@ -22,6 +22,7 @@
 from deso.btrfs.command import (
   create,
   delete,
+  snapshot,
 )
 from deso.btrfs.test.btrfsTest import (
   BtrfsDevice,
@@ -82,6 +83,44 @@ class TestBtrfsSubvolume(BtrfsTestCase):
 
     self.assertFalse(isdir(self._mount.path("root")))
     self.assertFalse(isfile(self._mount.path("root", "file")))
+
+
+  def testBtrfsSnapshot(self):
+    """Verify that we can create a snapshot of a btrfs subvolume.
+
+      Notes: We do not want to test all properties a snapshot provides
+             here (for instance, that once snapshotted further changes
+             in the original repository are not reflected in the
+             snapshot), we trust that if we properly create a snapshot
+             it will just have these properties.
+    """
+    data = b"test-string-to-read-from-snapshot"
+
+    create(self._mount.path("root"))
+    createFile(self._mount.path("root", "file"), data)
+
+    snapshot(self._mount.path("root"),
+             self._mount.path("root_snapshot"))
+
+    # Verify that the snapshot file and the original have the same
+    # content.
+    with open(self._mount.path("root_snapshot", "file"), "r") as handle:
+      self.assertEqual(handle.read(), data.decode("utf-8"))
+
+
+  def testBtrfsSnapshotReadOnly(self):
+    """Verify that a created snapshot is read-only."""
+    create(self._mount.path("root"))
+    createFile(self._mount.path("root", "file"))
+
+    snapshot(self._mount.path("root"),
+             self._mount.path("root_snapshot"))
+
+    # Creating a new file in the read-only snapshot should raise
+    # 'OSError: [Errno 30] Read-only file system'.
+    regex = "Read-only file"
+    with self.assertRaisesRegex(OSError, regex):
+      createFile(self._mount.path("root_snapshot", "file2"))
 
 
 if __name__ == "__main__":
