@@ -25,6 +25,7 @@ from deso.btrfs.command import (
   deserialize,
   serialize,
   snapshot,
+  sync,
 )
 from deso.btrfs.test.btrfsTest import (
   alias,
@@ -137,6 +138,9 @@ class TestBtrfsSnapshot(BtrfsSnapshotTestCase):
       # The snapshot will manifest itself under the same name it was
       # created. So we need a sub-directory to contain it.
       createDir(m.path("sent"))
+      # Make sure the snapshot is persisted to disk before serializing
+      # it.
+      execute(*sync(m.path()))
       pipeline([
         serialize(m.path("root_snapshot")),
         deserialize(m.path("sent"))
@@ -153,6 +157,7 @@ class TestBtrfsSnapshot(BtrfsSnapshotTestCase):
            alias(self._mount) as src:
         self.assertFalse(isdir(dst.path("root_snapshot")))
 
+        execute(*sync(src.path()))
         # Send the snapshot to the newly created btrfs file system and
         # deserialize it in its / directory.
         pipeline([

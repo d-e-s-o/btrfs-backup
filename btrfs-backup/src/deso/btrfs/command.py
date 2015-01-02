@@ -44,6 +44,16 @@ def snapshot(source, destination):
   return [_BTRFS, "subvolume", "snapshot", "-r", source, destination]
 
 
+def sync(filesystem):
+  """Retrieve the command to sync the given btrfs file system to disk.
+
+    Notes:
+      A sync operation should be performed before attempting to send
+      (i.e., serialize) a btrfs snapshot.
+  """
+  return [_BTRFS, "filesystem", "sync", filesystem]
+
+
 def serialize(subvolume):
   """Retrieve the command to serialize a btrfs subvolume into a byte stream."""
   return [_BTRFS, "send", subvolume]
