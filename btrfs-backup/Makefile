@@ -1,7 +1,7 @@
 # Makefile
 
 #/***************************************************************************
-# *   Copyright (C) 2014 deso (deso@posteo.net)                             *
+# *   Copyright (C) 2014-2015 deso (deso@posteo.net)                        *
 # *                                                                         *
 # *   This program is free software: you can redistribute it and/or modify  *
 # *   it under the terms of the GNU General Public License as published by  *
@@ -22,5 +22,6 @@
 test: ROOT := $(shell pwd)/..
 test:
 	@PYTHONPATH="$(ROOT)/execute/src:$(ROOT)/btrfs-backup/src:${PYTHONPATH}"\
+	 PYTHONDONTWRITEBYTECODE=1\
 		python -m unittest --verbose --buffer\
 			src/deso/btrfs/test/testBtrfs.py
