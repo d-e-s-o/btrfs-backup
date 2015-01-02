@@ -22,11 +22,14 @@
 from deso.btrfs.command import (
   create,
   delete,
+  deserialize,
+  serialize,
   snapshot,
 )
 from deso.btrfs.test.btrfsTest import (
   alias,
   BtrfsDevice,
+  BtrfsSnapshotTestCase,
   BtrfsTestCase,
   Mount,
   createDir,
@@ -34,6 +37,7 @@ from deso.btrfs.test.btrfsTest import (
 )
 from deso.execute import (
   execute,
+  pipeline,
 )
 from os.path import (
   isdir,
@@ -115,20 +119,49 @@ class TestBtrfsSubvolume(BtrfsTestCase):
         self.assertEqual(handle.read(), data.decode("utf-8"))
 
 
+class TestBtrfsSnapshot(BtrfsSnapshotTestCase):
+  """Test btrfs snapshot functionality."""
   def testBtrfsSnapshotReadOnly(self):
     """Verify that a created snapshot is read-only."""
     with alias(self._mount) as m:
-      execute(*create(m.path("root")))
-      createFile(m.path("root", "file"))
-
-      execute(*snapshot(m.path("root"),
-                        m.path("root_snapshot")))
-
       # Creating a new file in the read-only snapshot should raise
       # 'OSError: [Errno 30] Read-only file system'.
       regex = "Read-only file"
       with self.assertRaisesRegex(OSError, regex):
         createFile(m.path("root_snapshot", "file2"))
+
+
+  def testBtrfsSerializeAndDeserialize(self):
+    """Test the serialization and deserialization functionality."""
+    with alias(self._mount) as m:
+      # The snapshot will manifest itself under the same name it was
+      # created. So we need a sub-directory to contain it.
+      createDir(m.path("sent"))
+      pipeline([
+        serialize(m.path("root_snapshot")),
+        deserialize(m.path("sent"))
+      ])
+
+      self.assertTrue(isdir(m.path("sent", "root_snapshot")))
+      self.assertTrue(isfile(m.path("sent", "root_snapshot", "file")))
+
+
+  def testBtrfsSendToDifferentFileSystem(self):
+    """Test sending a subvolume from one btrfs file system to another."""
+    with BtrfsDevice() as btrfs:
+      with Mount(btrfs.device()) as dst,\
+           alias(self._mount) as src:
+        self.assertFalse(isdir(dst.path("root_snapshot")))
+
+        # Send the snapshot to the newly created btrfs file system and
+        # deserialize it in its / directory.
+        pipeline([
+          serialize(src.path("root_snapshot")),
+          deserialize(dst.path())
+        ])
+
+        self.assertTrue(isdir(dst.path("root_snapshot")))
+        self.assertTrue(isfile(dst.path("root_snapshot", "file")))
 
 
 if __name__ == "__main__":

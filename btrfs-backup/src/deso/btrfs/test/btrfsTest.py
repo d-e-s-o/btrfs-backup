@@ -27,6 +27,10 @@
   that contain well defined execution environments.
 """
 
+from deso.btrfs.command import (
+  create,
+  snapshot,
+)
 from deso.execute import (
   execute,
   executeAndRead,
@@ -219,3 +223,26 @@ class BtrfsTestCase(TestCase):
     self._device.destroy()
 
     super().tearDown()
+
+
+class BtrfsSnapshotTestCase(BtrfsTestCase):
+  """A test case subclass that provides a btrfs snapshot.
+
+    The file system looks like this:
+      /root/file
+      /root_snapshot/file
+  """
+  def setUp(self):
+    """Create a btrfs device and with a snapshot present."""
+    super().setUp()
+
+    try:
+      with alias(self._mount) as m:
+        execute(*create(m.path("root")))
+        createFile(m.path("root", "file"))
+
+        execute(*snapshot(m.path("root"),
+                          m.path("root_snapshot")))
+    except:
+      super().tearDown()
+      raise

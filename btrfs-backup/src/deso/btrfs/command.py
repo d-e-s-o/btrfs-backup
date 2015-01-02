@@ -21,7 +21,9 @@
 
   In order to perform btrfs related actions we interface with the
   btrfs(8) command. This command provides the necessary functionality we
-  require throughout the program.
+  require throughout the program, e.g., for creating and deleting
+  subvolumes (only used for testing), listing, creating and deleting
+  snapshots, sending and receiving them, and more.
 """
 
 _BTRFS = "/sbin/btrfs"
@@ -40,3 +42,13 @@ def delete(subvolume):
 def snapshot(source, destination):
   """Retrieve the command to create a read-only snapshot of a subvolume."""
   return [_BTRFS, "subvolume", "snapshot", "-r", source, destination]
+
+
+def serialize(subvolume):
+  """Retrieve the command to serialize a btrfs subvolume into a byte stream."""
+  return [_BTRFS, "send", subvolume]
+
+
+def deserialize(data):
+  """Retrieve the command to deserialize a btrfs subvolume from a byte stream."""
+  return [_BTRFS, "receive", data]
