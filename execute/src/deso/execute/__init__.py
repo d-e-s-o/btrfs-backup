@@ -23,4 +23,7 @@
 from deso.execute.execute_ import (
   execute,
   executeAndRead,
+  formatPipeline,
+  pipeline,
+  pipelineAndRead,
 )

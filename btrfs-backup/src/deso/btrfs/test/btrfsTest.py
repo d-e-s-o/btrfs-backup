@@ -107,12 +107,15 @@ class LoopBackDevice:
   def __init__(self, size):
     """Create a new loop back device backed by a file of given size."""
     # We start with retrieving the path to a loop device.
-    self._loop_dev = executeAndRead(_LOSETUP, "-f")
+    dev = executeAndRead(_LOSETUP, "-f")
     # Now create a temporary file to use as loop device backing store.
     fd, path = mkstemp()
     try:
       write(fd, b"\0" * size)
 
+      # Convert the byte array into a proper string and remove trailing
+      # newline.
+      self._loop_dev = dev.decode("utf-8")[:-1]
       # Actually set up the loop device. Now we have an ordinary block
       # device with absolute path 'self._loop_dev'.
       execute(_LOSETUP, self._loop_dev, path)
