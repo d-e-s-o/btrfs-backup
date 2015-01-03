@@ -62,3 +62,14 @@ def serialize(subvolume):
 def deserialize(data):
   """Retrieve the command to deserialize a btrfs subvolume from a byte stream."""
   return [_BTRFS, "receive", data]
+
+
+def snapshots(directory):
+  """Retrieve a command to list all snapshots in a given directory.
+
+    Notes:
+      Please be aware of the wrong handling of the -o parameter in
+      btrfs, leading to *not* necessarily only snapshots below the given
+      directory being returned.
+  """
+  return [_BTRFS, "subvolume", "list", "-s", "-r", "-o", directory]

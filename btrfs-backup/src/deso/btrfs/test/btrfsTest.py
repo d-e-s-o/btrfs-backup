@@ -31,6 +31,9 @@ from deso.btrfs.command import (
   create,
   snapshot,
 )
+from deso.btrfs.repository import (
+  Repository,
+)
 from deso.execute import (
   execute,
   executeAndRead,
@@ -243,6 +246,21 @@ class BtrfsSnapshotTestCase(BtrfsTestCase):
 
         execute(*snapshot(m.path("root"),
                           m.path("root_snapshot")))
+    except:
+      super().tearDown()
+      raise
+
+
+class BtrfsRepositoryTestCase(BtrfsSnapshotTestCase):
+  """A test case subclass that provides a btrfs repository with a snapshot present."""
+  def setUp(self):
+    """Create a btrfs repository."""
+    super().setUp()
+
+    try:
+      # Snapshots are directly created in the root of the btrfs file
+      # system here, so this is also where our repository is located.
+      self._repository = Repository(self._mount.path())
     except:
       super().tearDown()
       raise

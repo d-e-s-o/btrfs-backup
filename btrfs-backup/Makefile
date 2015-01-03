@@ -24,4 +24,5 @@ test:
 	@PYTHONPATH="$(ROOT)/execute/src:$(ROOT)/btrfs-backup/src:${PYTHONPATH}"\
 	 PYTHONDONTWRITEBYTECODE=1\
 		python -m unittest --verbose --buffer\
-			src/deso/btrfs/test/testBtrfs.py
+			src/deso/btrfs/test/testBtrfs.py\
+			src/deso/btrfs/test/testRepository.py
