@@ -27,6 +27,9 @@
   that contain well defined execution environments.
 """
 
+from deso.btrfs.alias import (
+  alias,
+)
 from deso.btrfs.command import (
   create,
   snapshot,
@@ -80,33 +83,6 @@ def createFile(path, content=None):
 def createDir(path):
   """Create a directory given an absolute path."""
   mkdir(path)
-
-
-def alias(variable):
-  """Provide an additional name for a variable temporarily.
-
-    The aliasing functionality is meant to be used in conjunction with
-    'with' blocks, like so:
-    self._incredibly_long_variable_name = Object(...)
-    with alias(self._incredibly_long_variable_name) as var:
-      var.doSth()
-      var.doSthElse()
-  """
-  class _Alias:
-    """A wrapper object used for providing a new name for a variable.
-
-      Notes: We rely on Python's closures here to avoid creating a
-             separate member variable.
-    """
-    def __enter__(self):
-      """The block enter handler just returns the variable."""
-      return variable
-
-    def __exit__(self, type_, value, traceback):
-      """The block exit handler does nothing."""
-      pass
-
-  return _Alias()
 
 
 class LoopBackDevice:

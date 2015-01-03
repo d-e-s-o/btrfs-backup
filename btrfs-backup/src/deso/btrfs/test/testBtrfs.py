@@ -19,6 +19,9 @@
 
 """Test btrfs wrapping functionality."""
 
+from deso.btrfs.alias import (
+  alias,
+)
 from deso.btrfs.command import (
   create,
   delete,
@@ -28,7 +31,6 @@ from deso.btrfs.command import (
   sync,
 )
 from deso.btrfs.test.btrfsTest import (
-  alias,
   BtrfsDevice,
   BtrfsSnapshotTestCase,
   BtrfsTestCase,

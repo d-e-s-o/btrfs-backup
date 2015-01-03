@@ -19,6 +19,9 @@
 
 """Test the repository functionality."""
 
+from deso.btrfs.alias import (
+  alias,
+)
 from deso.btrfs.command import (
   snapshot,
 )
@@ -27,7 +30,6 @@ from deso.btrfs.repository import (
   _snapshots,
 )
 from deso.btrfs.test.btrfsTest import (
-  alias,
   BtrfsRepositoryTestCase,
   BtrfsSnapshotTestCase,
   BtrfsTestCase,
