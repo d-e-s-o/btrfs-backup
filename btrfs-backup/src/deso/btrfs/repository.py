@@ -32,6 +32,7 @@ from deso.btrfs.alias import (
   alias,
 )
 from deso.btrfs.command import (
+  diff,
   show,
   snapshots as listSnapshots,
 )
@@ -54,11 +55,12 @@ _NUMS_STRING = r"{nr}+".format(nr=_NUM_STRING)
 _DATE_STRING = r"{nr}{{4}}-{nr}{{2}}-{nr}{{2}}".format(nr=_NUM_STRING)
 _TIME_STRING = r"{nr}{{2}}:{nr}{{2}}:{nr}{{2}}".format(nr=_NUM_STRING)
 _PATH_STRING = r"{any}+".format(any=_ANY_STRING)
+_FLAG_STRING = r"[A-Z|]+"
 # The format of a line as retrieved by executing the command returned by
 # the snapshots() function. Each line is expected to be following the
 # pattern:
 # ID A gen B cgen C top level D otime 2015-01-01 18:40:49 path PATH
-_LIST_STRING = (r"^ID {nums} gen {nums} cgen {nums} top level {nums}"
+_LIST_STRING = (r"^ID {nums} gen ({nums}) cgen {nums} top level {nums}"
                 r" otime ({date}) ({time}) path ({path})$")
 _LIST_REGEX = regex(_LIST_STRING.format(nums=_NUMS_STRING, date=_DATE_STRING,
                                         time=_TIME_STRING, path=_PATH_STRING))
@@ -68,20 +70,42 @@ _LIST_REGEX = regex(_LIST_STRING.format(nums=_NUMS_STRING, date=_DATE_STRING,
 # btrfs file system then it will end in 'is btrfs root'. We need to
 # detect this case to determine the btrfs root.
 _SHOW_IS_ROOT = "is btrfs root"
+# The format of a line as retrieved by executing the command returned by
+# the diff() function. Each line is expected to be following the
+# pattern:
+# inode A file offset B len C disk start D offset E gen F flags FLAGS PATH
+# We do not care about the FLAGS values. Apparently, they are always
+# uppercase and can be combined via '|' but we do not interpret them.
+_DIFF_STRING = (r"^inode {nums} file offset {nums} len {nums} disk start {nums}"
+                r" offset {nums} gen {nums} flags {flags} ({path})$")
+_DIFF_REGEX = regex(_DIFF_STRING.format(nums=_NUMS_STRING, flags=_FLAG_STRING,
+                                        path=_PATH_STRING))
+_DIFF_IGNORE = "transid marker"
 
 
 def _parseListLine(line):
-  """Parse a line of output for the command as returned by snapshots()."""
+  """Parse a line of output of the command as returned by snapshots()."""
   m = _LIST_REGEX.match(line)
   if not m:
     raise ValueError("Invalid snapshot list: unable to match line \"%s\"" % line)
 
-  date, time, path = m.groups()
+  gen, date, time, path = m.groups()
 
   result = {}
+  result["gen"] = gen
   result["time"] = datetime.strptime("%s_%s" % (date, time), _TIME_FORMAT)
   result["path"] = path
   return result
+
+
+def _parseDiffLine(line):
+  """Parse a line of output for the command as returned by diff()."""
+  m = _DIFF_REGEX.match(line)
+  if not m:
+    raise ValueError("Invalid diff list: unable to match line \"%s\"" % line)
+
+  path, = m.groups()
+  return path
 
 
 def _snapshots(directory):
@@ -156,7 +180,18 @@ class Repository:
 
 
   def snapshots(self):
-    """Retrieve a list of snapshots in this repository."""
+    """Retrieve a list of snapshots in this repository.
+
+      TODO: It seems likely this function is invoked from multiple
+            places because its output has some significance. Given this
+            suspicion, it might make sense to cache its output. Caching
+            would introduce an additional constraint in that we would
+            not detect newly created snapshots (not created by
+            ourselves) but it seems to be reasonable to assume we are
+            the only ones creating snapshots (of interest for this
+            program, i.e., following a particular naming scheme to be
+            decided) in the given repository.
+    """
     snapshots = _snapshots(self._directory)
 
     # We need to work around the btrfs problem that not necessarily all
@@ -192,6 +227,32 @@ class Repository:
       #       the outside. Such a change might require some adjustments,
       #       however, and it is unclear whether it is worth the effort.
       return snapshots
+
+
+  def diff(self, snap, subvolume):
+    """Find the files that changed in a given subvolume with respect to a snapshot."""
+    # We are given a snapshot but we need to know its generation ID. So
+    # retrieve the list of available snapshots and find the given one. A
+    # nice side effect is that we check the validity of the snapshot
+    # being passed in.
+    # TODO: Do we need a more expressive error message in case no
+    #       snapshot by the given name is found?
+    entry, = filter(lambda x: x["path"] == snap, self.snapshots())
+    gen = entry["gen"]
+
+    # TODO: Strictly speaking the command created by diff() works on a
+    #       generation basis and has no knowledge of snapshots. We need
+    #       to clarify whether a new snapshot *always* also means a new
+    #       generation (I assume so, but it would be best to get
+    #       confirmation).
+    output = executeAndRead(*diff(subvolume, gen))
+    output = output.decode("utf-8")[:-1].split("\n")
+    # The diff output usually is ended by a line such as:
+    # "transid marker was" followed by a generation ID. We should ignore
+    # those lines since we do not require this information. So filter
+    # them out here.
+    output = filter(lambda x: not x.startswith(_DIFF_IGNORE), output)
+    return [_parseDiffLine(line) for line in output]
 
 
   def path(self, *components):

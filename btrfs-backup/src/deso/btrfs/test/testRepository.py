@@ -36,9 +36,17 @@ from deso.btrfs.test.btrfsTest import (
   BtrfsSnapshotTestCase,
   BtrfsTestCase,
   createDir,
+  createFile,
 )
 from deso.execute import (
   execute,
+)
+from os import (
+  remove,
+)
+from os.path import (
+  isfile,
+  join,
 )
 from unittest import (
   main,
@@ -119,9 +127,12 @@ class TestRepository(BtrfsRepositoryTestCase):
     # We cannot tell the expected snapshot time with 100% certainty,
     # we could introduce a delta but that seems dirty as well (since
     # it is unclear how large it should be -- theoretically there is
-    # no upper bound). So just compare the reported path for now.
+    # no upper bound). A similar problem exists for the generation --
+    # slight differences in the implementation could change the
+    # generation we see here. So just compare the reported path for now.
     self.assertEqual(snap["path"], "root_snapshot")
     self.assertTrue("time" in snap)
+    self.assertTrue("gen" in snap)
 
 
   def testRepositoryListMultipleSnapshots(self):
@@ -134,6 +145,70 @@ class TestRepository(BtrfsRepositoryTestCase):
 
     self.assertEqual(snap1["path"], "root_snapshot")
     self.assertEqual(snap2["path"], "root_snapshot2")
+
+
+  def testRepositoryEmptyDiff(self):
+    """Verify that an empty diff is reported on a fresh snapshot."""
+    with alias(self._repository) as r:
+      self.assertEqual(r.diff("root_snapshot", r.path("root")), [])
+
+
+  def testRepositoryEmptyFileNotInDiff(self):
+    """Check whether a newly created empty file is reported by diff().
+
+      The find-new functionality provided by btrfs apparently does not
+      catch cases where an empty file is created in a subvolume after a
+      snapshot was taken. This test checks for this property. Note that
+      this property is *not* favorable for the usage of find-new in this
+      program. This test case is meant to raise awareness for this
+      issue.
+    """
+    with alias(self._repository) as r:
+      createFile(r.path("root", "file2"))
+      createFile(r.path("root", "file3"))
+      createFile(r.path("root", "file4"))
+
+      self.assertEqual(r.diff("root_snapshot", r.path("root")), [])
+      self.assertTrue(isfile(r.path("root", "file2")))
+
+
+  def testRepositoryDiff(self):
+    """Verify that we can retrieve a list of changed files for a subvolume."""
+    with alias(self._repository) as r:
+      file1 = r.path("root", "file")
+      dir1 = r.path("root", "dir")
+      file2 = r.path("root", "dir", "file2")
+
+      # Write something into the existing file to have it contain
+      # changes over the snapshot.
+      with open(file1, "w") as f:
+        f.write("\0")
+
+      # Also create a new file with some content.
+      createDir(dir1)
+      createFile(file2, b"test-data")
+
+      files = r.diff("root_snapshot", r.path("root"))
+      # We cannot tell for sure the order in which the files appear so use
+      # a set here.
+      expected = {"file", join("dir", "file2")}
+
+      self.assertEqual(set(files), expected)
+
+
+  def testRepositoryDiffDeletion(self):
+    """Check whether deleted files in a subvolume are reported by diff().
+
+      This test case checks that files that are present in a snapshot
+      but got deleted in the associated subvolume are not reported by
+      diff(). This test's purpose is more to show case and create
+      awareness of this behavior than to actually verify that this
+      property is really enforced.
+    """
+    with alias(self._repository) as r:
+      remove(r.path("root", "file"))
+
+      self.assertEqual(r.diff("root_snapshot", r.path("root")), [])
 
 
 if __name__ == "__main__":

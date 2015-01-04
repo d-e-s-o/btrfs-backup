@@ -78,3 +78,12 @@ def snapshots(directory):
       directory being returned.
   """
   return [_BTRFS, "subvolume", "list", "-s", "-r", "-o", directory]
+
+
+def diff(subvolume, generation):
+  """Retrieve a command to query a list of changed files for the given subvolume.
+
+    This function creates a command that, given a btrfs subvolume and a
+    previous generation ID, determines the files that have been changed.
+  """
+  return [_BTRFS, "subvolume", "find-new", subvolume, generation]
