@@ -23,10 +23,12 @@ from deso.btrfs.alias import (
   alias,
 )
 from deso.btrfs.command import (
+  create,
   snapshot,
 )
 from deso.btrfs.repository import (
   Repository,
+  _findRoot,
   _snapshots,
 )
 from deso.btrfs.test.btrfsTest import (
@@ -51,6 +53,27 @@ class TestRepositoryBase(BtrfsTestCase):
     self.assertEqual(repo.snapshots(), [])
 
 
+  def testRepositorySubvolumeFindRootOnRoot(self):
+    """Test retrieval of the absolute path of the btrfs root from the root."""
+    with alias(self._mount) as m:
+      self.assertEqual(_findRoot(m.path()), m.path())
+
+
+  def testRepositorySubvolumeFindRootFromBelowRoot(self):
+    """Test retrieval of the absolute path of the btrfs root from a sub-directory."""
+    with alias(self._mount) as m:
+      subdirectory = m.path("dir")
+      createDir(subdirectory)
+      self.assertEqual(_findRoot(subdirectory), m.path())
+
+
+  def testRepositorySubvolumeFindRootFromSubvolume(self):
+    """Test retrieval of the absolute path of the btrfs root from a true subvolume."""
+    with alias(self._mount) as m:
+      execute(*create(m.path("root")))
+      self.assertEqual(_findRoot(m.path("root")), m.path())
+
+
 class TestRepositorySnapshots(BtrfsSnapshotTestCase):
   """Test snapshot related repository functionality."""
   def testRepositoryListNoSnapshotPresentInSubdir(self):
@@ -65,6 +88,26 @@ class TestRepositorySnapshots(BtrfsSnapshotTestCase):
       #       There is no subvolume below the given path, so reporting a
       #       snapshot here is wrong.
       self.assertNotEqual(_snapshots(m.path("dir")), [])
+
+
+  def testRepositoryListOnlySnapshotsInRepository(self):
+    """Verify that listing snapshots in a repository not in the btrfs root works."""
+    with alias(self._mount) as m:
+      createDir(m.path("repository"))
+
+      execute(*snapshot(m.path("root"),
+                        m.path("root_snapshot2")))
+      execute(*snapshot(m.path("root"),
+                        m.path("repository", "root_snapshot3")))
+      execute(*snapshot(m.path("root"),
+                        m.path("repository", "root_snapshot4")))
+
+      repo = Repository(m.path("repository"))
+      # Only snapshots in the repository must occur in the list.
+      snap1, snap2 = repo.snapshots()
+
+      self.assertEqual(snap1["path"], "root_snapshot3")
+      self.assertEqual(snap2["path"], "root_snapshot4")
 
 
 class TestRepository(BtrfsRepositoryTestCase):

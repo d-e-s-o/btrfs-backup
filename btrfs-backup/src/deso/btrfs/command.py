@@ -39,6 +39,11 @@ def delete(subvolume):
   return [_BTRFS, "subvolume", "delete", subvolume]
 
 
+def show(subvolume):
+  """Retrieve the command to show information about a btrfs subvolume."""
+  return [_BTRFS, "subvolume", "show", subvolume]
+
+
 def snapshot(source, destination):
   """Retrieve the command to create a read-only snapshot of a subvolume."""
   return [_BTRFS, "subvolume", "snapshot", "-r", source, destination]
