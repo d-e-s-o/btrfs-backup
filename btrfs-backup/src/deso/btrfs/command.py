@@ -77,7 +77,11 @@ def snapshots(directory):
       btrfs, leading to *not* necessarily only snapshots below the given
       directory being returned.
   """
-  return [_BTRFS, "subvolume", "list", "-s", "-r", "-o", directory]
+  # Note: We include a time stamp into a snapshot's name which is
+  #       formatted in a way so as to ensure sorting a list of snapshots
+  #       is in ascending order with respect to the time each was
+  #       created at.
+  return [_BTRFS, "subvolume", "list", "--sort=path", "-s", "-r", "-o", directory]
 
 
 def diff(subvolume, generation):

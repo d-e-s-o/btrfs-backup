@@ -48,6 +48,16 @@ from re import (
 )
 
 
+# The time format for the creation time of a snapshot. This format is
+# used for parsing btrfs' snapshot list output as well as for deriving
+# time stamps to be included in a snapshot's name.
+# An important property this format has to provide is proper sorting:
+# When sorting a list of snapshots (each containing a time stamp of this
+# format), the most recent snapshot should always be at the end of the
+# list after sorting is through. Since we are comparing strings, this
+# property has to hold for all possible locales (even if Python does not
+# include locales in their sorting, btrfs might, whose sorted output we
+# parse).
 _TIME_FORMAT = "%Y-%m-%d_%H:%M:%S"
 _ANY_STRING = r"."
 _NUM_STRING = r"[0-9]"

@@ -25,4 +25,5 @@ test:
 	 PYTHONDONTWRITEBYTECODE=1\
 		python -m unittest --verbose --buffer\
 			src/deso/btrfs/test/testBtrfs.py\
+			src/deso/btrfs/test/testLocaleCompliance.py\
 			src/deso/btrfs/test/testRepository.py
