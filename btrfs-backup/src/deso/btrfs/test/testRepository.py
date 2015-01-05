@@ -19,6 +19,10 @@
 
 """Test the repository functionality."""
 
+from datetime import (
+  datetime,
+  timedelta,
+)
 from deso.btrfs.alias import (
   alias,
 )
@@ -30,13 +34,16 @@ from deso.btrfs.repository import (
   Repository,
   _findRoot,
   _snapshots,
+  sync as syncRepos,
 )
 from deso.btrfs.test.btrfsTest import (
+  BtrfsDevice,
   BtrfsRepositoryTestCase,
   BtrfsSnapshotTestCase,
   BtrfsTestCase,
   createDir,
   createFile,
+  Mount,
 )
 from deso.execute import (
   execute,
@@ -50,6 +57,9 @@ from os.path import (
 )
 from unittest import (
   main,
+)
+from unittest.mock import (
+  patch,
 )
 
 
@@ -205,6 +215,130 @@ class TestRepository(BtrfsRepositoryTestCase):
       remove(r.path("root", "file"))
 
       self.assertEqual(r.diff("root_snapshot", r.path("root")), [])
+
+
+class TestBtrfsSync(BtrfsTestCase):
+  """Test repository synchronization functionality."""
+  def testRepositorySync(self):
+    """Test that we can sync a single subvolume between two repositories."""
+    with patch("deso.btrfs.repository.datetime", wraps=datetime) as mock_now:
+      with alias(self._mount) as m:
+        mock_now.now.return_value = datetime(2015, 1, 5, 22, 34)
+
+        execute(*create(m.path("root")))
+        createDir(m.path("root", "dir"))
+        createFile(m.path("root", "dir", "file"))
+
+        createDir(m.path("repo1"))
+        createDir(m.path("repo2"))
+
+        src = Repository(m.path("repo1"))
+        dst = Repository(m.path("repo2"))
+
+        # Case 1) Sync repositories initially. A snapshot should be taken
+        #         in the source repository and transferred to the remote
+        #         repository.
+        syncRepos([m.path("root")], src, dst)
+
+        # Verify that both repositories contain the proper snapshots.
+        snap1, = src.snapshots()
+        self.assertRegex(snap1["path"], "root-2015-01-05_22:34:00")
+
+        snap2, = dst.snapshots()
+        self.assertRegex(snap2["path"], "root-2015-01-05_22:34:00")
+
+        # Case 2) Try to sync two repositories that are already in sync.
+        #         The catch here is that the time did not advance
+        #         neither did the snapshotted subvolume contain any new
+        #         data. So no snapshot should be made.
+        syncRepos([m.path("root")], src, dst)
+
+        snap1, = src.snapshots()
+        self.assertRegex(snap1["path"], "root-2015-01-05_22:34:00")
+
+        snap2, = dst.snapshots()
+        self.assertRegex(snap2["path"], "root-2015-01-05_22:34:00")
+
+        # Case 3) Snapshot after new data is available in the subvolume.
+        #         Once new data is available in the repository this fact
+        #         should be detected and an additional sync operation
+        #         must create a new snapshot and transfer it properly.
+
+        # Simulate advancement in time.
+        # TODO: If we do not advance the time, the btrfs snapshot
+        #       command will fail for the obvious reason that the
+        #       snapshot already exists. Essentially this means that we
+        #       cannot create two snapshots within one second. We need
+        #       to workaround this problem by adding a number to a
+        #       snapshot's name if one with the same name exists. This
+        #       is a very rare case, but who knows with what frequency
+        #       someone invokes this program.
+        mock_now.now.return_value = datetime(2015, 1, 5, 22, 35)
+
+        # Create a new file with some data in it.
+        createFile(m.path("root", "dir", "file2"), b"new-data")
+
+        syncRepos([m.path("root")], src, dst)
+
+        snap1_1, snap1_2 = src.snapshots()
+        self.assertRegex(snap1_1["path"], "root-2015-01-05_22:34:00")
+        self.assertRegex(snap1_2["path"], "root-2015-01-05_22:35:00")
+
+        snap2_1, snap2_2 = dst.snapshots()
+        self.assertRegex(snap2_1["path"], "root-2015-01-05_22:34:00")
+        self.assertRegex(snap2_2["path"], "root-2015-01-05_22:35:00")
+
+
+  def testRepositoryMultipleSubvolumeSync(self):
+    """Verify that we can sync multiple subvolumes between two repositories."""
+    with patch("deso.btrfs.repository.datetime", wraps=datetime) as mock_now:
+      with BtrfsDevice() as btrfs:
+        with Mount(btrfs.device()) as d:
+          with alias(self._mount) as s:
+            mock_now.now.return_value = datetime.now()
+            subvolumes = [
+              s.path("home", "user"),
+              s.path("home", "user", "local"),
+              s.path("root"),
+            ]
+            createDir(s.path("snapshots"))
+            createDir(s.path("home"))
+            createDir(d.path("backup"))
+
+            for subvolume in subvolumes:
+              execute(*create(subvolume))
+
+            createDir(s.path("home", "user", "data"))
+            createFile(s.path("home", "user", "data", "movie.mp4"), b"abcdefgh")
+            createDir(s.path("home", "user", "local", "bin"))
+            createFile(s.path("home", "user", "local", "bin", "test.sh"), b"#!/bin/sh")
+            createDir(s.path("root", ".ssh"))
+            createFile(s.path("root", ".ssh", "key.pub"), b"1234567890")
+
+            src = Repository(s.path("snapshots"))
+            dst = Repository(d.path("backup"))
+
+            syncRepos(subvolumes, src, dst)
+
+            user, local, root = dst.snapshots()
+
+            self.assertTrue(isfile(dst.path(user["path"], "data", "movie.mp4")))
+            self.assertTrue(isfile(dst.path(local["path"], "bin", "test.sh")))
+            self.assertTrue(isfile(dst.path(root["path"], ".ssh", "key.pub")))
+
+            createFile(s.path("home", "user", "local", "bin", "test.py"), b"#!/usr/bin/python")
+            createFile(s.path("root", ".ssh", "authorized"), b"localhost")
+
+            # Advance time to avoid name clash.
+            mock_now.now.return_value = mock_now.now.return_value + timedelta(seconds=1)
+
+            syncRepos(subvolumes, src, dst)
+            user, _, local, _, root = dst.snapshots()
+
+            self.assertTrue(isfile(dst.path(user["path"], "data", "movie.mp4")))
+            self.assertTrue(isfile(dst.path(local["path"], "bin", "test.py")))
+            self.assertTrue(isfile(dst.path(local["path"], "bin", "test.sh")))
+            self.assertTrue(isfile(dst.path(root["path"], ".ssh", "key.pub")))
 
 
 if __name__ == "__main__":

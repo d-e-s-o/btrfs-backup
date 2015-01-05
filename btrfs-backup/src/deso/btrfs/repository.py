@@ -32,12 +32,22 @@ from deso.btrfs.alias import (
   alias,
 )
 from deso.btrfs.command import (
+  deserialize,
   diff,
   show,
+  serialize,
+  snapshot as mkSnapshot,
   snapshots as listSnapshots,
+  sync as syncFs,
 )
 from deso.execute import (
+  execute,
   executeAndRead,
+  pipeline,
+)
+from os import (
+  sep,
+  uname,
 )
 from os.path import (
   dirname,
@@ -170,6 +180,146 @@ def _findRoot(directory):
   return directory
 
 
+def _snapshotBaseName(subvolume):
+  """Retrieve the base name of a snapshot for the given subvolume.
+
+    The basename is the part of the first part of a snapshot's name that
+    stays constant over time (but not system), i.e., that has no time
+    information encoded in it and does not depend on data variable over
+    time.
+  """
+  r = uname()
+  name = "%s-%s-%s" % (r.nodename, r.sysname.lower(), r.machine)
+  path = subvolume.replace(sep, "_")
+  return "%s-%s" % (name, path)
+
+
+def _snapshotName(subvolume):
+  """Retrieve the fully qualified snapshot name, i.e., the base name with a time stamp."""
+  name = _snapshotBaseName(subvolume)
+  time = datetime.strftime(datetime.now(), _TIME_FORMAT)
+  return "%s-%s" % (name, time)
+
+
+def _findSnapshotsForSubvolume(snapshots, subvolume):
+  """Given a list of snapshots, find all belonging to the given subvolume."""
+  base = _snapshotBaseName(subvolume)
+
+  # It is worth pointing out that we assume here (and in a couple of
+  # other locations) that all relevant snapshots are *not* located in a
+  # sub-directory, otherwise we cannot simply compare the base against
+  # the beginning of the string. This is a valid assumption for this
+  # program, though.
+  return list(filter(lambda x: x["path"].startswith(base), snapshots))
+
+
+def _findMostRecent(snapshots, subvolume):
+  """Given a list of snapshots, find the most recent one."""
+  snapshots = _findSnapshotsForSubvolume(snapshots, subvolume)
+
+  if not snapshots:
+    return None
+
+  # The most recent snapshot is the last since we list snapshots in
+  # ascending order by date.
+  return snapshots[-1]["path"]
+
+
+def _findSnapshotByName(snapshots, name):
+  """Check if a list of snapshots contains a given one."""
+  snapshots = list(filter(lambda x: x["path"] == name, snapshots))
+
+  if not snapshots:
+    return None
+
+  snapshot, = snapshots
+  return snapshot
+
+
+def _createSnapshot(subvolume, repository):
+  """Create a snapshot of the given subvolume in the given repository."""
+  # TODO: We need to create an incremental snapshot here, i.e., one that
+  #       only contains the changes over another snapshot. This
+  #       functionality is very important to keep the amount of data
+  #       transferred as low as possible which in turn allows for more
+  #       frequent snapshotting to take place.
+  name = _snapshotName(subvolume)
+  execute(*mkSnapshot(subvolume, repository.path(name)))
+  return name
+
+
+def _findOrCreate(subvolume, repository):
+  """Ensure an up-to-date snapshot is available in the given repository."""
+  name = _findMostRecent(repository.snapshots(), subvolume)
+
+  # If we found no snapshot or if files are changed between the current
+  # state of the subvolume and the most recent snapshot we just found
+  # then create a new snapshot.
+  # TODO: This part is sub-optimal. We find the most recent snapshot and
+  #       return its path. Now, Repository.diff again retrieves a list
+  #       of all snapshots to retrieve the generation number but we
+  #       already had this information available, we just discarded it.
+  if not name or repository.diff(name, subvolume):
+    return _createSnapshot(subvolume, repository), True
+
+  return name, False
+
+
+def _deploy(snapshot, created, src, dst):
+  """Deploy a snapshot to a repository."""
+  # Only if the snapshot did exist previously can it possibly be already
+  # in the destination repository.
+  if not created:
+    if _findSnapshotByName(dst.snapshots(), snapshot):
+      # The snapshot is already present in the repository. There is
+      # nothing to be done.
+      return
+
+  # Be sure to have the snapshot persisted to disk before trying to
+  # serialize it.
+  execute(*syncFs(src.root))
+  # Finally transfer the snapshot from the source repository to the
+  # destination.
+  pipeline([
+    serialize(src.path(snapshot)),
+    deserialize(dst.path())
+  ])
+
+
+def _sync(subvolume, src, dst):
+  """Sync a single subvolume between two repositories.
+
+    The synchronization of two repositories is a two step process:
+    1) Snapshot creation.
+      o Find most recent snapshot in source repository for the subvolume
+      | to backup.
+      |-> Found one:
+      |   o Check if the subvolume to backup has file changes with
+      |   | respect to this snapshot.
+      |   |-> Yes:
+      |   |   o Create a new snapshot.
+      |   |-> No:
+      |       o Our snapshot is up-to-date, no need to create a new one.
+      |-> Found none:
+          o Create a new snapshot.
+    2) Snapshot deployment.
+      o Check whether the most recent snapshot (there now has to be one)
+      | is available in the destination repository.
+      |-> Yes:
+      |   o The source and destination repositories are in sync already.
+      |-> No:
+          o Transfer the snapshot to the destination repository.
+  """
+  snapshot, created = _findOrCreate(subvolume, src)
+  _deploy(snapshot, created, src, dst)
+
+
+def sync(subvolumes, src, dst):
+  """Sync the given subvolumes between two repositories, i.e., this one and a "remote" one."""
+  for subvolume in subvolumes:
+    _sync(subvolume, src, dst)
+
+
 def _trail(path):
   """Ensure the path has a trailing separator."""
   return join(path, "")
@@ -233,23 +383,22 @@ class Repository:
       return snapshots
 
 
-  def diff(self, snap, subvolume):
+  def diff(self, snapshot, subvolume):
     """Find the files that changed in a given subvolume with respect to a snapshot."""
     # We are given a snapshot but we need to know its generation ID. So
     # retrieve the list of available snapshots and find the given one. A
     # nice side effect is that we check the validity of the snapshot
     # being passed in.
-    # TODO: Do we need a more expressive error message in case no
-    #       snapshot by the given name is found?
-    entry, = filter(lambda x: x["path"] == snap, self.snapshots())
-    gen = entry["gen"]
+    found = _findSnapshotByName(self.snapshots(), snapshot)
+    if not found:
+      raise FileNotFoundError("Snapshot not found: \"%s\"" % snapshot)
 
     # TODO: Strictly speaking the command created by diff() works on a
     #       generation basis and has no knowledge of snapshots. We need
     #       to clarify whether a new snapshot *always* also means a new
     #       generation (I assume so, but it would be best to get
     #       confirmation).
-    output = executeAndRead(*diff(subvolume, gen))
+    output = executeAndRead(*diff(subvolume, found["gen"]))
     output = output.decode("utf-8")[:-1].split("\n")
     # The diff output usually is ended by a line such as:
     # "transid marker was" followed by a generation ID. We should ignore
@@ -262,3 +411,9 @@ class Repository:
   def path(self, *components):
     """Form an absolute path by combining the given path components."""
     return join(self._directory, *components)
+
+
+  @property
+  def root(self):
+    """Retrieve the root directory of the btrfs file system the repository resides on."""
+    return self._root
