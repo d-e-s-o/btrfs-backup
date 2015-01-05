@@ -86,7 +86,11 @@ def snapshots(directory):
   #       formatted in a way so as to ensure sorting a list of snapshots
   #       is in ascending order with respect to the time each was
   #       created at.
-  return [_BTRFS, "subvolume", "list", "--sort=path", "-s", "-r", "-o", directory]
+  # Note: We do not pass in the -s option here. The reason is that once
+  #       we send and received a snapshot, the property of it being a
+  #       snapshot is lost. The only property that is preserved is it
+  #       being read-only.
+  return [_BTRFS, "subvolume", "list", "--sort=path", "-r", "-o", directory]
 
 
 def diff(subvolume, generation):

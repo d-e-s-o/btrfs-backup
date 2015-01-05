@@ -124,14 +124,10 @@ class TestRepository(BtrfsRepositoryTestCase):
     """Verify that we can list a single snapshot and parse it correctly."""
     snap, = self._repository.snapshots()
 
-    # We cannot tell the expected snapshot time with 100% certainty,
-    # we could introduce a delta but that seems dirty as well (since
-    # it is unclear how large it should be -- theoretically there is
-    # no upper bound). A similar problem exists for the generation --
-    # slight differences in the implementation could change the
-    # generation we see here. So just compare the reported path for now.
+    # We cannot tell the generation number with 100% certainty because
+    # slight differences in the implementation could change it. So just
+    # compare the reported path for now.
     self.assertEqual(snap["path"], "root_snapshot")
-    self.assertTrue("time" in snap)
     self.assertTrue("gen" in snap)
 
 
