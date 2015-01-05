@@ -26,7 +26,12 @@
   snapshots, sending and receiving them, and more.
 """
 
-_BTRFS = "/sbin/btrfs"
+from deso.execute import (
+  findCommand,
+)
+
+
+_BTRFS = findCommand("btrfs")
 
 
 def create(subvolume):

@@ -22,6 +22,7 @@
 from deso.execute import (
   execute,
   executeAndRead,
+  findCommand,
   formatPipeline,
   pipeline,
   pipelineAndRead,
@@ -32,9 +33,6 @@ from os import (
 from os.path import (
   isfile,
 )
-from subprocess import (
-  CalledProcessError,
-)
 from tempfile import (
   mktemp,
 )
@@ -44,12 +42,12 @@ from unittest import (
 )
 
 
-_TRUE = "/bin/true"
-_FALSE = "/bin/false"
-_ECHO = "/bin/echo"
-_TOUCH = "/bin/touch"
-_TR = "/bin/tr"
-_DD = "/bin/dd"
+_TRUE = findCommand("true")
+_FALSE = findCommand("false")
+_ECHO = findCommand("echo")
+_TOUCH = findCommand("touch")
+_TR = findCommand("tr")
+_DD = findCommand("dd")
 _URAND = "/dev/urandom"
 
 
@@ -76,7 +74,7 @@ class TestExecute(TestCase):
 
   def testExecuteThrowsOnCommandFailure(self):
     """Verify that a failing command causes an exception to be raised."""
-    with self.assertRaises(CalledProcessError):
+    with self.assertRaises(ChildProcessError):
       execute(_FALSE)
 
 
@@ -162,7 +160,7 @@ class TestExecute(TestCase):
     # Run twice, once with failing command at the end and once somewhere
     # in the middle.
     for _ in range(2):
-      with self.assertRaises(CalledProcessError):
+      with self.assertRaises(ChildProcessError):
         pipeline(commands)
 
       commands += [identity]

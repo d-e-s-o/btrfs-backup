@@ -30,9 +30,6 @@ from os import (
   read,
   waitpid,
 )
-from subprocess import (
-  CalledProcessError,
-)
 from sys import (
   stderr,
   stdin,
@@ -138,10 +135,7 @@ def _wait(pids, commands):
 
     if status != 0:
       command = formatPipeline([commands[i]])
-      # TODO: Decide whether we want to use subprocess' CalledProcessError
-      #       exception type here or have our own type and remove this
-      #       dependency.
-      raise CalledProcessError(status, command, None)
+      raise ChildProcessError(status, command)
 
 
 def pipeline(commands):

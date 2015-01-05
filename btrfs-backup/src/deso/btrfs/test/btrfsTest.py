@@ -40,6 +40,7 @@ from deso.btrfs.repository import (
 from deso.execute import (
   execute,
   executeAndRead,
+  findCommand,
 )
 from os import (
   O_CREAT,
@@ -64,10 +65,10 @@ from unittest import (
 )
 
 
-_LOSETUP = "/sbin/losetup"
-_MKBTRFS = "/sbin/mkfs.btrfs"
-_MOUNT = "/bin/mount"
-_UMOUNT = "/bin/umount"
+_LOSETUP = findCommand("losetup")
+_MKBTRFS = findCommand("mkfs.btrfs")
+_MOUNT = findCommand("mount")
+_UMOUNT = findCommand("umount")
 
 
 def createFile(path, content=None):
