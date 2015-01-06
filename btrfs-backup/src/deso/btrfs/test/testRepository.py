@@ -263,16 +263,6 @@ class TestBtrfsSync(BtrfsTestCase):
         #         Once new data is available in the repository this fact
         #         should be detected and an additional sync operation
         #         must create a new snapshot and transfer it properly.
-
-        # Simulate advancement in time.
-        # TODO: If we do not advance the time, the btrfs snapshot
-        #       command will fail for the obvious reason that the
-        #       snapshot already exists. Essentially this means that we
-        #       cannot create two snapshots within one second. We need
-        #       to workaround this problem by adding a number to a
-        #       snapshot's name if one with the same name exists. This
-        #       is a very rare case, but who knows with what frequency
-        #       someone invokes this program.
         mock_now.now.return_value = datetime(2015, 1, 5, 22, 35)
 
         # Create a new file with some data in it.
@@ -287,6 +277,28 @@ class TestBtrfsSync(BtrfsTestCase):
         snap2_1, snap2_2 = dst.snapshots()
         self.assertRegex(snap2_1["path"], "root-2015-01-05_22:34:00")
         self.assertRegex(snap2_2["path"], "root-2015-01-05_22:35:00")
+
+        # Case 4) Perform an additional sync (after new data was added)
+        #         without time advancement. The result would normally be
+        #         a name clash because a snapshot with the same name
+        #         already exists (the time stamps are equal). The system
+        #         needs to make sure to number snapshots appropriately
+        #         if one with the same name already exists.
+        createFile(m.path("root", "dir", "file3"), b"even-more-new-data")
+
+        syncRepos([m.path("root")], src, dst)
+
+        _, _, snap1_3 = src.snapshots()
+        self.assertRegex(snap1_3["path"], "root-2015-01-05_22:35:00-1")
+
+        # Case 5) Try once more to see that the appended number is
+        #         properly incremented and not just appended to or so.
+        createFile(m.path("root", "dir", "file4"), b"even-even-more-new-data")
+
+        syncRepos([m.path("root")], src, dst)
+
+        _, _, _, snap1_4 = src.snapshots()
+        self.assertRegex(snap1_4["path"], "root-2015-01-05_22:35:00-2")
 
 
   def testRepositoryMultipleSubvolumeSync(self):

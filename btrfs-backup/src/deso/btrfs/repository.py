@@ -194,11 +194,46 @@ def _snapshotBaseName(subvolume):
   return "%s-%s" % (name, path)
 
 
-def _snapshotName(subvolume):
-  """Retrieve the fully qualified snapshot name, i.e., the base name with a time stamp."""
+def _ensureUniqueName(snapshot, snapshots):
+  """Make sure that a snapshot name is unique by potentially appending a number.
+
+    Check if a snapshot with this name already exists in the given list.
+    This can happen if we sync in very rapid succession (with data being
+    added in between). In this case we need to add a number to
+    snapshot's name to avoid name clashes.
+  """
+  i = 1
+  name = snapshot
+
+  # Note that there might be multiple snapshots created this way, so not
+  # just pick the first number and be done but actually verify that the
+  # newly generated name is unique and if not increment the number and
+  # try again.
+  # Note: Strictly speaking we would have to verify that appending a
+  #       dash with a number preserves the sorting property that the
+  #       most recent snapshot (in this case the one with the higher
+  #       number if everything else in the name is equal) is listed
+  #       last. We luck out because the time format already contains a
+  #       dash as a separator so the existing test covers this case as
+  #       well.
+  while _findSnapshotByName(snapshots, name):
+    name = "%s-%s" % (snapshot, i)
+    i = i + 1
+
+  # TODO: By just returning a name without actually creating the
+  #       snapshot at the same moment we potentially race with
+  #       concurrent snapshot operations. We should cope with failures
+  #       due to name clashes instead.
+  return name
+
+
+def _snapshotName(subvolume, snapshots):
+  """Retrieve a fully qualified, unique snapshot name."""
   name = _snapshotBaseName(subvolume)
   time = datetime.strftime(datetime.now(), _TIME_FORMAT)
-  return "%s-%s" % (name, time)
+  snapshot = "%s-%s" % (name, time)
+
+  return _ensureUniqueName(snapshot, snapshots)
 
 
 def _findSnapshotsForSubvolume(snapshots, subvolume):
@@ -236,21 +271,23 @@ def _findSnapshotByName(snapshots, name):
   return snapshot
 
 
-def _createSnapshot(subvolume, repository):
+def _createSnapshot(subvolume, repository, snapshots):
   """Create a snapshot of the given subvolume in the given repository."""
   # TODO: We need to create an incremental snapshot here, i.e., one that
   #       only contains the changes over another snapshot. This
   #       functionality is very important to keep the amount of data
   #       transferred as low as possible which in turn allows for more
   #       frequent snapshotting to take place.
-  name = _snapshotName(subvolume)
+  name = _snapshotName(subvolume, snapshots)
+
   execute(*mkSnapshot(subvolume, repository.path(name)))
   return name
 
 
 def _findOrCreate(subvolume, repository):
   """Ensure an up-to-date snapshot is available in the given repository."""
-  name = _findMostRecent(repository.snapshots(), subvolume)
+  snapshots = repository.snapshots()
+  name = _findMostRecent(snapshots, subvolume)
 
   # If we found no snapshot or if files are changed between the current
   # state of the subvolume and the most recent snapshot we just found
@@ -260,7 +297,7 @@ def _findOrCreate(subvolume, repository):
   #       of all snapshots to retrieve the generation number but we
   #       already had this information available, we just discarded it.
   if not name or repository.diff(name, subvolume):
-    return _createSnapshot(subvolume, repository), True
+    return _createSnapshot(subvolume, repository, snapshots), True
 
   return name, False
 

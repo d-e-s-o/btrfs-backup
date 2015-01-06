@@ -53,6 +53,7 @@ class TestLocaleCompliance(TestCase):
       """Perform the sort test with the current locale."""
       datetimes = [
         datetime(1970, 1,  1,  0,  0,  0),
+        datetime(1970, 2,  1,  0,  0,  0),
         datetime(1988, 10, 13, 14, 33, 37),
         datetime(1995, 12, 31, 23, 59, 59),
         datetime(2000, 1,  1,  0,  0,  0),
@@ -61,6 +62,7 @@ class TestLocaleCompliance(TestCase):
       ]
       expected = [
         "1970-01-01_00:00:00",
+        "1970-02-01_00:00:00",
         "1988-10-13_14:33:37",
         "1995-12-31_23:59:59",
         "2000-01-01_00:00:00",
