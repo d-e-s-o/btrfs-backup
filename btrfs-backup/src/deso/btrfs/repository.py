@@ -257,7 +257,7 @@ def _findMostRecent(snapshots, subvolume):
 
   # The most recent snapshot is the last since we list snapshots in
   # ascending order by date.
-  return snapshots[-1]["path"]
+  return snapshots[-1]
 
 
 def _findSnapshotByName(snapshots, name):
@@ -287,19 +287,15 @@ def _createSnapshot(subvolume, repository, snapshots):
 def _findOrCreate(subvolume, repository):
   """Ensure an up-to-date snapshot is available in the given repository."""
   snapshots = repository.snapshots()
-  name = _findMostRecent(snapshots, subvolume)
+  snapshot = _findMostRecent(snapshots, subvolume)
 
   # If we found no snapshot or if files are changed between the current
   # state of the subvolume and the most recent snapshot we just found
   # then create a new snapshot.
-  # TODO: This part is sub-optimal. We find the most recent snapshot and
-  #       return its path. Now, Repository.diff again retrieves a list
-  #       of all snapshots to retrieve the generation number but we
-  #       already had this information available, we just discarded it.
-  if not name or repository.diff(name, subvolume):
+  if not snapshot or _diff(snapshot, subvolume):
     return _createSnapshot(subvolume, repository, snapshots), True
 
-  return name, False
+  return snapshot["path"], False
 
 
 def _deploy(snapshot, created, src, dst):
@@ -355,6 +351,23 @@ def sync(subvolumes, src, dst):
   """Sync the given subvolumes between two repositories, i.e., this one and a "remote" one."""
   for subvolume in subvolumes:
     _sync(subvolume, src, dst)
+
+
+def _diff(snapshot, subvolume):
+  """Find the files that changed in a given subvolume with respect to a snapshot."""
+  # TODO: Strictly speaking the command created by diff() works on a
+  #       generation basis and has no knowledge of snapshots. We need
+  #       to clarify whether a new snapshot *always* also means a new
+  #       generation (I assume so, but it would be best to get
+  #       confirmation).
+  output = executeAndRead(*diff(subvolume, snapshot["gen"]))
+  output = output.decode("utf-8")[:-1].split("\n")
+  # The diff output usually is ended by a line such as:
+  # "transid marker was" followed by a generation ID. We should ignore
+  # those lines since we do not require this information. So filter
+  # them out here.
+  output = filter(lambda x: not x.startswith(_DIFF_IGNORE), output)
+  return [_parseDiffLine(line) for line in output]
 
 
 def _trail(path):
@@ -422,27 +435,15 @@ class Repository:
 
   def diff(self, snapshot, subvolume):
     """Find the files that changed in a given subvolume with respect to a snapshot."""
-    # We are given a snapshot but we need to know its generation ID. So
-    # retrieve the list of available snapshots and find the given one. A
-    # nice side effect is that we check the validity of the snapshot
-    # being passed in.
+    # We are given a snapshot but we need a full snapshot entry
+    # containing the name and the generation ID. So retrieve the list of
+    # available snapshots and find the given one. A nice side effect is
+    # that we check the validity of the snapshot being passed in.
     found = _findSnapshotByName(self.snapshots(), snapshot)
     if not found:
       raise FileNotFoundError("Snapshot not found: \"%s\"" % snapshot)
 
-    # TODO: Strictly speaking the command created by diff() works on a
-    #       generation basis and has no knowledge of snapshots. We need
-    #       to clarify whether a new snapshot *always* also means a new
-    #       generation (I assume so, but it would be best to get
-    #       confirmation).
-    output = executeAndRead(*diff(subvolume, found["gen"]))
-    output = output.decode("utf-8")[:-1].split("\n")
-    # The diff output usually is ended by a line such as:
-    # "transid marker was" followed by a generation ID. We should ignore
-    # those lines since we do not require this information. So filter
-    # them out here.
-    output = filter(lambda x: not x.startswith(_DIFF_IGNORE), output)
-    return [_parseDiffLine(line) for line in output]
+    return _diff(found, subvolume)
 
 
   def path(self, *components):
