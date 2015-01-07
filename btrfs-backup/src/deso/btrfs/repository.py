@@ -42,7 +42,6 @@ from deso.btrfs.command import (
 )
 from deso.execute import (
   execute,
-  executeAndRead,
   pipeline,
 )
 from os import (
@@ -133,7 +132,7 @@ def _snapshots(directory):
       usage of this function is discouraged. Use the Repository's
       snapshots() method instead.
   """
-  output = executeAndRead(*listSnapshots(directory))
+  output, _ = execute(*listSnapshots(directory), read_out=True)
   # We might retrieve an empty output if no snapshots were present. In
   # this case, just return early here.
   if not output:
@@ -147,7 +146,7 @@ def _snapshots(directory):
 
 def _isRoot(directory):
   """Check if a given directory represents the root of a btrfs file system."""
-  output = executeAndRead(*show(directory))
+  output, _ = execute(*show(directory), read_out=True)
   output = output.decode("utf-8")[:-1].split("\n")
 
   # The output of show() contains multiple lines in case the given
@@ -360,7 +359,7 @@ def _diff(snapshot, subvolume):
   #       to clarify whether a new snapshot *always* also means a new
   #       generation (I assume so, but it would be best to get
   #       confirmation).
-  output = executeAndRead(*diff(subvolume, snapshot["gen"]))
+  output, _ = execute(*diff(subvolume, snapshot["gen"]), read_out=True)
   output = output.decode("utf-8")[:-1].split("\n")
   # The diff output usually is ended by a line such as:
   # "transid marker was" followed by a generation ID. We should ignore

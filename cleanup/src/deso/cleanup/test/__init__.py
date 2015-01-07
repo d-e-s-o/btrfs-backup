@@ -1,7 +1,7 @@
-# Makefile
+# __init__.py
 
 #/***************************************************************************
-# *   Copyright (C) 2014-2015 deso (deso@posteo.net)                        *
+# *   Copyright (C) 2015 deso (deso@posteo.net)                             *
 # *                                                                         *
 # *   This program is free software: you can redistribute it and/or modify  *
 # *   it under the terms of the GNU General Public License as published by  *
@@ -17,13 +17,26 @@
 # *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
 # ***************************************************************************/
 
+"""Initialization file of the cleanup.test module."""
 
-.PHONY: test
-test: ROOT := $(shell pwd)/..
-test:
-	@PYTHONPATH="$(ROOT)/cleanup/src:$(ROOT)/execute/src:$(ROOT)/btrfs-backup/src:${PYTHONPATH}"\
-	 PYTHONDONTWRITEBYTECODE=1\
-		python -m unittest --verbose --buffer\
-			src/deso/btrfs/test/testBtrfs.py\
-			src/deso/btrfs/test/testLocaleCompliance.py\
-			src/deso/btrfs/test/testRepository.py
+from os.path import (
+  dirname,
+)
+from unittest import (
+  TestLoader,
+  TestSuite,
+)
+
+
+def allTests():
+  """Retrieve a test suite containing all tests."""
+  # Explicitly load all tests by name and not using a single discovery
+  # to be able to easily deselect parts.
+  tests = [
+    "testDefer.py",
+  ]
+
+  loader = TestLoader()
+  directory = dirname(__file__)
+  suites = [loader.discover(directory, pattern=test) for test in tests]
+  return TestSuite(suites)

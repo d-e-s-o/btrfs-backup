@@ -21,11 +21,9 @@
 
 from deso.execute import (
   execute,
-  executeAndRead,
   findCommand,
   formatPipeline,
   pipeline,
-  pipelineAndRead,
 )
 from os import (
   remove,
@@ -46,30 +44,46 @@ _TRUE = findCommand("true")
 _FALSE = findCommand("false")
 _ECHO = findCommand("echo")
 _TOUCH = findCommand("touch")
+_CAT = findCommand("cat")
 _TR = findCommand("tr")
 _DD = findCommand("dd")
-_URAND = "/dev/urandom"
 
 
 class TestExecute(TestCase):
   """A test case for command execution functionality."""
   def testExecuteAndNoOutput(self):
     """Test command execution and output retrieval for empty output."""
-    output = executeAndRead(_TRUE)
+    output, _ = execute(_TRUE, read_out=True)
     self.assertEqual(output, b"")
 
 
   def testExecuteAndOutput(self):
     """Test command execution and output retrieval."""
-    output = executeAndRead(_ECHO, "success")
+    output, _ = execute(_ECHO, "success", read_out=True)
     self.assertEqual(output, b"success\n")
 
 
   def testExecuteAndOutputMultipleLines(self):
     """Test command execution with multiple lines of output."""
     string = "first-line\nsuccess"
-    output = executeAndRead(_ECHO, string)
+    output, _ = execute(_ECHO, string, read_out=True)
     self.assertEqual(output, bytes(string + "\n", "utf-8"))
+
+
+  def testExecuteAndInputOutput(self):
+    """Test that we can redirect stdin and stdout at the same time."""
+    output, _ = execute(_CAT, data_in=b"success", read_out=True)
+    self.assertEqual(output, b"success")
+
+
+  def testExecuteRedirectAll(self):
+    """Test that we can redirect stdin, stdout, and stderr at the same time."""
+    out, err = execute(_DD, data_in=b"success", read_out=True, read_err=True)
+    line1, line2, _, _ = err.decode("utf-8").split("\n")
+
+    self.assertEqual(out, b"success")
+    self.assertTrue(line1.endswith("records in"))
+    self.assertTrue(line2.endswith("records out"))
 
 
   def testExecuteThrowsOnCommandFailure(self):
@@ -132,20 +146,30 @@ class TestExecute(TestCase):
       [_TR, "a", "c"],
       [_TR, "r", "s"],
     ]
-    output = pipelineAndRead(commands)
+    output, _ = pipeline(commands, read_out=True)
 
     self.assertEqual(output, b"success\n")
 
 
   def testPipelineWithExcessiveRead(self):
     """Verify that we do not deadlock when receiving large quantities of data."""
-    megabytes = 32
-    commands = [
-      [_DD, "bs=%s" % (1024*1024), "count=%s" % megabytes, "if=%s" % _URAND],
-    ]
-    output = pipelineAndRead(commands)
+    megabyte = 1024 * 1024
+    megabytes = 8
+    commands = []
+    data = b"a" * megabytes * megabyte
 
-    self.assertEqual(len(output), megabytes*1024*1024)
+    # Test with 1 to 3 programs in the pipeline.
+    for _ in range(3):
+      commands += [[_DD]]
+      # TODO: The following does not work and fails with "[Errno 32]
+      #       Broken Pipe". Find out why. Some people suggest it might
+      #       be a problem on the Python side. Need to understand in
+      #       either case. Note that adding 'iflag=fullblock' to the dd
+      #       command solves the issue.
+      #commands += [[_DD, 'bs=%s' % megabyte, 'count=%s' % megabytes]]
+
+      out, _ = pipeline(commands, data_in=data, read_out=True)
+      self.assertEqual(len(out), len(data))
 
 
   def testPipelineWithFailingCommand(self):

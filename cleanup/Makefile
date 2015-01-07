@@ -1,7 +1,7 @@
 # Makefile
 
 #/***************************************************************************
-# *   Copyright (C) 2014-2015 deso (deso@posteo.net)                        *
+# *   Copyright (C) 2015 deso (deso@posteo.net)                             *
 # *                                                                         *
 # *   This program is free software: you can redistribute it and/or modify  *
 # *   it under the terms of the GNU General Public License as published by  *
@@ -19,11 +19,7 @@
 
 
 .PHONY: test
-test: ROOT := $(shell pwd)/..
 test:
-	@PYTHONPATH="$(ROOT)/cleanup/src:$(ROOT)/execute/src:$(ROOT)/btrfs-backup/src:${PYTHONPATH}"\
+	@PYTHONPATH="$(shell pwd)/src/:${PYTHONPATH}"\
 	 PYTHONDONTWRITEBYTECODE=1\
-		python -m unittest --verbose --buffer\
-			src/deso/btrfs/test/testBtrfs.py\
-			src/deso/btrfs/test/testLocaleCompliance.py\
-			src/deso/btrfs/test/testRepository.py
+		python -m unittest --verbose --buffer deso.cleanup.test.allTests
