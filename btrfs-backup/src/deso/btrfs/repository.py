@@ -272,11 +272,6 @@ def _findSnapshotByName(snapshots, name):
 
 def _createSnapshot(subvolume, repository, snapshots):
   """Create a snapshot of the given subvolume in the given repository."""
-  # TODO: We need to create an incremental snapshot here, i.e., one that
-  #       only contains the changes over another snapshot. This
-  #       functionality is very important to keep the amount of data
-  #       transferred as low as possible which in turn allows for more
-  #       frequent snapshotting to take place.
   name = _snapshotName(subvolume, snapshots)
 
   execute(*mkSnapshot(subvolume, repository.path(name)))
@@ -292,20 +287,42 @@ def _findOrCreate(subvolume, repository):
   # state of the subvolume and the most recent snapshot we just found
   # then create a new snapshot.
   if not snapshot or _diff(snapshot, subvolume):
-    return _createSnapshot(subvolume, repository, snapshots), True
+    old = snapshot["path"] if snapshot else None
+    new = _createSnapshot(subvolume, repository, snapshots)
+    return new, old
 
-  return snapshot["path"], False
+  return snapshot["path"], snapshot["path"]
 
 
-def _deploy(snapshot, created, src, dst):
+def _deploy(snapshot, parent, src, dst):
   """Deploy a snapshot to a repository."""
-  # Only if the snapshot did exist previously can it possibly be already
-  # in the destination repository.
-  if not created:
-    if _findSnapshotByName(dst.snapshots(), snapshot):
-      # The snapshot is already present in the repository. There is
-      # nothing to be done.
-      return
+  if parent:
+    # Retrieve a list of snapshots in the destination repository.
+    snapshots = dst.snapshots()
+
+    # In case the snapshot did already exist, i.e., we did not create a
+    # new one, the parent and the "current" snapshot are equal. And only
+    # if it did already exist can it possibly be available in the destination
+    # repository.
+    if snapshot == parent:
+      if _findSnapshotByName(snapshots, snapshot):
+        # The snapshot is already present in the repository. There is
+        # nothing to be done.
+        return
+
+    # We have to check the remote side for the availability of the
+    # parent snapshot. If it does not exist, we must not send only the
+    # incremental data but everything.
+    # TODO: By relying solely on the value of parent here we miss the
+    #       case that parent (i.e., our previously most recent snapshot)
+    #       is not available on the destination side but a different
+    #       snapshot is available on both sides. We can simply catch
+    #       this case by comparing the lists of snapshots on src and dst
+    #       in reverse order and finding the commonalities.
+    if _findSnapshotByName(snapshots, parent):
+      parent = src.path(parent)
+    else:
+      parent = None
 
   # Be sure to have the snapshot persisted to disk before trying to
   # serialize it.
@@ -313,7 +330,15 @@ def _deploy(snapshot, created, src, dst):
   # Finally transfer the snapshot from the source repository to the
   # destination.
   pipeline([
-    serialize(src.path(snapshot)),
+    # TODO: The btrfs send command (internally used in serialize())
+    #       actually supports multiple supplies of the -c option to
+    #       specify a clone source. Doing so would potentially allow for
+    #       better sharing of internal data on the destination side. We
+    #       could check for all commonalities of snapshots on the source
+    #       and the destination and supply a list of them to the
+    #       command. It would be great to know if there actually *is* a
+    #       benefit before implementing these bits, however.
+    serialize(src.path(snapshot), parent),
     deserialize(dst.path())
   ])
 
@@ -342,8 +367,8 @@ def _sync(subvolume, src, dst):
       |-> No:
           o Transfer the snapshot to the destination repository.
   """
-  snapshot, created = _findOrCreate(subvolume, src)
-  _deploy(snapshot, created, src, dst)
+  snapshot, parent = _findOrCreate(subvolume, src)
+  _deploy(snapshot, parent, src, dst)
 
 
 def sync(subvolumes, src, dst):
