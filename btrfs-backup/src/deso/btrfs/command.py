@@ -29,6 +29,9 @@
 from deso.execute import (
   findCommand,
 )
+from itertools import (
+  chain,
+)
 
 
 _BTRFS = findCommand("btrfs")
@@ -64,17 +67,23 @@ def sync(filesystem):
   return [_BTRFS, "filesystem", "sync", filesystem]
 
 
-def serialize(subvolume, parent=None):
+def serialize(subvolume, parents=None):
   """Retrieve the command to serialize a btrfs subvolume into a byte stream."""
   options = []
-  if parent:
-    # We use both the parent and clone-source options here. Clone-source
-    # indicates that data from the given snapshot(s) is used to create
-    # the new snapshot, i.e., better sharing can happen. The parent
-    # option in general indicates that we are sending an incremental
-    # snapshot only, that is, only the differences between 'snapshot'
-    # and 'parent' are put into the byte stream.
-    options += ["-p", parent, "-c", parent]
+  if parents:
+    # We only use the clone-source (-c) option here and not the parent (-p) one
+    # because we can specify multiple clone sources (the parameter is allowed
+    # multiple times) whereas we must only specify one parent. In any case,
+    # if the -c option is given the btrfs command will figure out the parent to
+    # use by itself.
+    # In general, the clone-source option specifies that data from a given
+    # snapshot (that has to be available on both the source and the
+    # destination) is used when constructing back the subvolume from the byte
+    # stream. This additional information can be used to achieve better sharing
+    # of internally used data in the resulting subvolume. Since the
+    # clone-source option implies the parent option, it also instructs the
+    # command to send only the incremental data (to the latest snapshot).
+    options = list(chain.from_iterable(["-c", parent] for parent in parents))
 
   return [_BTRFS, "send"] + options + [subvolume]
 

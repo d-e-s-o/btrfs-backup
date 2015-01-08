@@ -35,6 +35,7 @@ from deso.btrfs.command import (
 )
 from deso.btrfs.repository import (
   Repository,
+  _findCommonSnapshots,
   _findRoot,
   _snapshots,
   sync as syncRepos,
@@ -95,6 +96,57 @@ class TestRepositoryBase(BtrfsTestCase):
       self.assertEqual(_findRoot(m.path("root")), m.path())
 
 
+  def testRepositoryFindCommonSnapshots(self):
+    """Test the _findCommonSnapshots() function on various snapshot sets."""
+    def makeTrueSnapshots(snaps):
+      """Convert a list of snapshot paths into a list of snapshot dicts as used internally."""
+      # Our internally used snapshots are made up not only of the path
+      # but also the generation number. Assume it to be 0 here.
+      return list(map(lambda x: {"path": x, "gen": 0}, snaps))
+
+    def assertCommonality(snaps1, snaps2, expected):
+      """Assert that two sets of snapshots have the expected common snapshots."""
+      snaps1 = makeTrueSnapshots(snaps1)
+      snaps2 = makeTrueSnapshots(snaps2)
+      expected = makeTrueSnapshots(expected)
+
+      self.assertEqual(list(_findCommonSnapshots(snaps1, snaps2)), expected)
+
+    # Case 1) No commonality. One list empty.
+    snaps1 = [
+      "localhost-linux-x86_64-local-2015-01-09_15:39:47",
+      "localhost-linux-x86_64-local-2015-01-09_16:57:16",
+    ]
+    assertCommonality(snaps1, [], [])
+
+    # Case 2) Equal backed up subvolume. One common snapshot.
+    snaps1 = [
+      "localhost-linux-x86_64-local-2015-01-09_15:39:47",
+      "localhost-linux-x86_64-local-2015-01-09_16:57:16",
+    ]
+    snaps2 = [
+      "localhost-linux-x86_64-local-2015-01-09_14:57:12",
+      "localhost-linux-x86_64-local-2015-01-09_15:39:47",
+      "localhost-linux-x86_64-local-2015-01-09_17:50:32",
+    ]
+    expected = [
+      "localhost-linux-x86_64-local-2015-01-09_15:39:47",
+    ]
+    assertCommonality(snaps1, snaps2, expected)
+
+    # Case 3) Snapshots of different subvolumes with equal times. No
+    #         commonality.
+    snaps1 = [
+      "localhost-linux-x86_64-local-2015-01-09_15:39:47",
+      "localhost-linux-x86_64-local-2015-01-09_16:57:16",
+    ]
+    snaps2 = [
+      "localhost-linux-x86_64-root-2015-01-09_15:39:47",
+      "localhost-linux-x86_64-root-2015-01-09_16:57:16",
+    ]
+    assertCommonality(snaps1, snaps2, [])
+
+
   def testRepositorySerializeIncremental(self):
     """Test the incremental serialization functionality."""
     def snap(name):
@@ -112,7 +164,7 @@ class TestRepositoryBase(BtrfsTestCase):
 
         # Serialize the given snapshot but read the data into a Python
         # object to determine the length of the byte stream.
-        data, _ = execute(*serialize(snapshot, parent),
+        data, _ = execute(*serialize(snapshot, [parent] if parent else None),
                           read_out=True)
         size = len(data)
         # Now form back the snapshot out of the intermediate byte stream.

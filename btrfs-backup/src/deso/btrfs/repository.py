@@ -270,6 +270,26 @@ def _findSnapshotByName(snapshots, name):
   return snapshot
 
 
+def _findCommonSnapshots(src_snaps, dst_snaps):
+  """Given two lists of snapshots, find the ones common on both lists."""
+  # Note that although not strictly required we want to keep the
+  # snapshot dicts with all their meta-data and not reduce them to
+  # simple paths, i.e., strings. We achieve that by creating the set of
+  # paths that is common to both repositories and then just filtering
+  # out all other paths from one of the original lists.
+  src_paths = set(map(lambda x: x["path"], src_snaps))
+  dst_paths = set(map(lambda x: x["path"], dst_snaps))
+
+  # Note that by using set intersection here we assume that there is a uniform
+  # style of trailing directory separators used. This fact is ensured by the
+  # Repository's snapshots() method.
+  paths = src_paths & dst_paths
+
+  # Work on the list with fewer items.
+  snaps = src_snaps if len(src_snaps) <= len(dst_snaps) else dst_snaps
+  return filter(lambda x: x["path"] in paths, snaps)
+
+
 def _createSnapshot(subvolume, repository, snapshots):
   """Create a snapshot of the given subvolume in the given repository."""
   name = _snapshotName(subvolume, snapshots)
@@ -278,9 +298,8 @@ def _createSnapshot(subvolume, repository, snapshots):
   return name
 
 
-def _findOrCreate(subvolume, repository):
+def _findOrCreate(subvolume, repository, snapshots):
   """Ensure an up-to-date snapshot is available in the given repository."""
-  snapshots = repository.snapshots()
   snapshot = _findMostRecent(snapshots, subvolume)
 
   # If we found no snapshot or if files are changed between the current
@@ -294,35 +313,36 @@ def _findOrCreate(subvolume, repository):
   return snapshot["path"], snapshot["path"]
 
 
-def _deploy(snapshot, parent, src, dst):
+def _deploy(snapshot, parent, src, dst, src_snaps, subvolume):
   """Deploy a snapshot to a repository."""
   if parent:
     # Retrieve a list of snapshots in the destination repository.
-    snapshots = dst.snapshots()
+    dst_snaps = dst.snapshots()
 
     # In case the snapshot did already exist, i.e., we did not create a
     # new one, the parent and the "current" snapshot are equal. And only
     # if it did already exist can it possibly be available in the destination
     # repository.
     if snapshot == parent:
-      if _findSnapshotByName(snapshots, snapshot):
+      if _findSnapshotByName(dst_snaps, snapshot):
         # The snapshot is already present in the repository. There is
         # nothing to be done.
         return
 
-    # We have to check the remote side for the availability of the
-    # parent snapshot. If it does not exist, we must not send only the
-    # incremental data but everything.
-    # TODO: By relying solely on the value of parent here we miss the
-    #       case that parent (i.e., our previously most recent snapshot)
-    #       is not available on the destination side but a different
-    #       snapshot is available on both sides. We can simply catch
-    #       this case by comparing the lists of snapshots on src and dst
-    #       in reverse order and finding the commonalities.
-    if _findSnapshotByName(snapshots, parent):
-      parent = src.path(parent)
-    else:
-      parent = None
+    # We have to check which snapshots are available in the source
+    # repository as well as the destination repository. These can be
+    # used as parents for the incremental transfer. If none exists on
+    # the destination side, we have to send the latest snapshot in its
+    # entirety (i.e., the entire subvolume).
+    parents = _findCommonSnapshots(src_snaps, dst_snaps)
+    # We have the common set of snapshots, however, these are still
+    # snapshots of arbitrary subvolumes. We are only interested in those
+    # for the subvolume we are working on currently.
+    parents = _findSnapshotsForSubvolume(parents, subvolume)
+    # Convert the snapshot list to paths relative to the source repository.
+    parents = map(lambda x: src.path(x["path"]), parents)
+  else:
+    parents = None
 
   # Be sure to have the snapshot persisted to disk before trying to
   # serialize it.
@@ -330,15 +350,7 @@ def _deploy(snapshot, parent, src, dst):
   # Finally transfer the snapshot from the source repository to the
   # destination.
   pipeline([
-    # TODO: The btrfs send command (internally used in serialize())
-    #       actually supports multiple supplies of the -c option to
-    #       specify a clone source. Doing so would potentially allow for
-    #       better sharing of internal data on the destination side. We
-    #       could check for all commonalities of snapshots on the source
-    #       and the destination and supply a list of them to the
-    #       command. It would be great to know if there actually *is* a
-    #       benefit before implementing these bits, however.
-    serialize(src.path(snapshot), parent),
+    serialize(src.path(snapshot), parents),
     deserialize(dst.path())
   ])
 
@@ -367,8 +379,9 @@ def _sync(subvolume, src, dst):
       |-> No:
           o Transfer the snapshot to the destination repository.
   """
-  snapshot, parent = _findOrCreate(subvolume, src)
-  _deploy(snapshot, parent, src, dst)
+  snapshots = src.snapshots()
+  snapshot, parent = _findOrCreate(subvolume, src, snapshots)
+  _deploy(snapshot, parent, src, dst, snapshots, subvolume)
 
 
 def sync(subvolumes, src, dst):
@@ -408,18 +421,7 @@ class Repository:
 
 
   def snapshots(self):
-    """Retrieve a list of snapshots in this repository.
-
-      TODO: It seems likely this function is invoked from multiple
-            places because its output has some significance. Given this
-            suspicion, it might make sense to cache its output. Caching
-            would introduce an additional constraint in that we would
-            not detect newly created snapshots (not created by
-            ourselves) but it seems to be reasonable to assume we are
-            the only ones creating snapshots (of interest for this
-            program, i.e., following a particular naming scheme to be
-            decided) in the given repository.
-    """
+    """Retrieve a list of snapshots in this repository."""
     snapshots = _snapshots(self._directory)
 
     # We need to work around the btrfs problem that not necessarily all
