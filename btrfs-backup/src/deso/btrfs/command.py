@@ -64,9 +64,19 @@ def sync(filesystem):
   return [_BTRFS, "filesystem", "sync", filesystem]
 
 
-def serialize(subvolume):
+def serialize(subvolume, parent=None):
   """Retrieve the command to serialize a btrfs subvolume into a byte stream."""
-  return [_BTRFS, "send", subvolume]
+  options = []
+  if parent:
+    # We use both the parent and clone-source options here. Clone-source
+    # indicates that data from the given snapshot(s) is used to create
+    # the new snapshot, i.e., better sharing can happen. The parent
+    # option in general indicates that we are sending an incremental
+    # snapshot only, that is, only the differences between 'snapshot'
+    # and 'parent' are put into the byte stream.
+    options += ["-p", parent, "-c", parent]
+
+  return [_BTRFS, "send"] + options + [subvolume]
 
 
 def deserialize(data):

@@ -28,7 +28,10 @@ from deso.btrfs.alias import (
 )
 from deso.btrfs.command import (
   create,
+  deserialize,
+  serialize,
   snapshot,
+  sync,
 )
 from deso.btrfs.repository import (
   Repository,
@@ -90,6 +93,56 @@ class TestRepositoryBase(BtrfsTestCase):
     with alias(self._mount) as m:
       execute(*create(m.path("root")))
       self.assertEqual(_findRoot(m.path("root")), m.path())
+
+
+  def testRepositorySerializeIncremental(self):
+    """Test the incremental serialization functionality."""
+    def snap(name):
+      """Create a snapshot of the 'root' directory under the given name."""
+      # Now we need a new snapshot.
+      execute(*snapshot(m.path("root"),
+                        m.path(name)))
+      execute(*sync(m.path()))
+
+    def transfer(snapshot, parent=None):
+      """Transfer (serialize & deserialize) a snapshot into the 'sent' directory."""
+      with alias(self._mount) as m:
+        parent = m.path(parent) if parent else None
+        snapshot = m.path(snapshot)
+
+        # Serialize the given snapshot but read the data into a Python
+        # object to determine the length of the byte stream.
+        data, _ = execute(*serialize(snapshot, parent),
+                          read_out=True)
+        size = len(data)
+        # Now form back the snapshot out of the intermediate byte stream.
+        execute(*deserialize(m.path("sent")), data_in=data)
+        return size
+
+    with alias(self._mount) as m:
+      # Create a subvolume and file with some data so that the meta data
+      # does not make up the majority of the byte stream once
+      # serialized.
+      execute(*create(m.path("root")))
+      createFile(m.path("root", "file2"), b"data" * 1024)
+      createDir(m.path("sent"))
+
+      # Now we need an initial snapshot.
+      snap("snap1")
+      size1 = transfer("snap1")
+
+      # Create a new file with some data.
+      createFile(m.path("root", "file3"), b"data" * 512)
+      # Create a second snapshot.
+      snap("snap2")
+      # Serialize only the differences to the first snapshot.
+      size2 = transfer("snap2", parent="snap1")
+
+      # We must have transferred less data for the incremental, second
+      # snapshot than for the initial one which was a full transfer.
+      self.assertGreater(size1, size2)
+      self.assertTrue(isfile(m.path("sent", "snap1", "file2")))
+      self.assertTrue(isfile(m.path("sent", "snap2", "file3")))
 
 
 class TestRepositorySnapshots(BtrfsSnapshotTestCase):
