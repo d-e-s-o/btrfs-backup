@@ -1,7 +1,7 @@
-# Makefile
+# __init__.py
 
 #/***************************************************************************
-# *   Copyright (C) 2014-2015 deso (deso@posteo.net)                        *
+# *   Copyright (C) 2015 deso (deso@posteo.net)                             *
 # *                                                                         *
 # *   This program is free software: you can redistribute it and/or modify  *
 # *   it under the terms of the GNU General Public License as published by  *
@@ -17,36 +17,30 @@
 # *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
 # ***************************************************************************/
 
-ROOT := $(shell pwd)/..
+"""Initialization file of the btrfs.test module."""
+
+from os.path import (
+  dirname,
+)
+from unittest import (
+  TestLoader,
+  TestSuite,
+)
 
 
-.PHONY: test
-test:
-	@PYTHONPATH="$(ROOT)/cleanup/src:$(ROOT)/execute/src:$(ROOT)/btrfs-backup/src:${PYTHONPATH}"\
-	 PYTHONDONTWRITEBYTECODE=1\
-		python -m unittest --verbose --buffer deso.btrfs.test.allTests
+def allTests():
+  """Retrieve a test suite containing all tests."""
+  # Explicitly load all tests by name and not using a single discovery
+  # to be able to easily deselect parts.
+  tests = [
+    "testBtrfs.py",
+    "testDefer.py",
+    "testLocaleCompliance.py",
+    "testMain.py",
+    "testRepository.py",
+  ]
 
-
-ifneq (,$(filter testSetup testAll,$(MAKECMDGOALS)))
-.PHONY: testSetup
-# TODO: At the moment we do not delete the directory because it is full
-#       of stuff and a 'rm -r' is not desired here. Find a satisfactory
-#       solution to this issue.
-testSetup: DIR := $(shell mktemp --directory --quiet)
-testSetup:
-	@git clone --quiet $(ROOT) $(DIR)
-	@(export PYTHONPATH="$(DIR)/cleanup/src:$(DIR)/execute/src/:$(DIR)/btrfs-backup/src:${PYTHONPATH}";\
-	  cd $(DIR)/btrfs-backup &&\
-	    python setup.py --version > /dev/null &&\
-	    python setup.py --description > /dev/null &&\
-	    python setup.py test &&\
-	    python setup.py build &&\
-	    python setup.py clean &&\
-	    python setup.py sdist &&\
-	    python setup.py bdist &&\
-	    python setup.py clean)
-
-
-.PHONY: testAll
-testAll: test testSetup
-endif
+  loader = TestLoader()
+  directory = dirname(__file__)
+  suites = [loader.discover(directory, pattern=test) for test in tests]
+  return TestSuite(suites)
