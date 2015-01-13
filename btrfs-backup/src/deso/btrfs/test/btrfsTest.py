@@ -37,6 +37,10 @@ from deso.btrfs.command import (
 from deso.btrfs.repository import (
   Repository,
 )
+from deso.btrfs.test.util import (
+  mkdtemp,
+  mkstemp,
+)
 from deso.execute import (
   execute,
   findCommand,
@@ -54,10 +58,6 @@ from os import (
 )
 from os.path import (
   join,
-)
-from tempfile import (
-  mkdtemp,
-  mkstemp,
 )
 from unittest import (
   TestCase,
