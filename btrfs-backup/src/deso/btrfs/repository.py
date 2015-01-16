@@ -49,6 +49,7 @@ from os import (
   uname,
 )
 from os.path import (
+  abspath,
   dirname,
   join,
 )
@@ -160,6 +161,7 @@ def _isRoot(directory):
 def _findRoot(directory):
   """Find the root of the btrfs file system containing the given directory."""
   assert directory
+  assert directory == abspath(directory)
 
   # Note that we have no guard here against an empty directory as input
   # or later because of a dirname invocation. However, the show command
@@ -416,6 +418,9 @@ class Repository:
   """This class represents a repository for snapshots."""
   def __init__(self, directory):
     """Initialize the object and bind it to the given directory."""
+    # We always work with absolute paths here.
+    directory = abspath(directory)
+
     self._root = _findRoot(directory)
     self._directory = _trail(directory)
 
