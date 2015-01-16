@@ -108,7 +108,7 @@ def _parseListLine(line):
   gen, path = m.groups()
 
   result = {}
-  result["gen"] = gen
+  result["gen"] = int(gen)
   result["path"] = path
   return result
 
@@ -408,12 +408,19 @@ def sync(subvolumes, src, dst):
 
 def _diff(snapshot, subvolume):
   """Find the files that changed in a given subvolume with respect to a snapshot."""
+  # Because of an apparent bug in btrfs(8) (or a misunderstanding on my
+  # side), we cannot use the generation reported for a snapshot to
+  # create a diff of the files that changed *since* then. Rather, we
+  # have to increment the generation by one, otherwise the files changed
+  # *in* the snapshot are included in the diff as well.
+  generation = str(snapshot["gen"] + 1)
+
   # TODO: Strictly speaking the command created by diff() works on a
   #       generation basis and has no knowledge of snapshots. We need
   #       to clarify whether a new snapshot *always* also means a new
   #       generation (I assume so, but it would be best to get
   #       confirmation).
-  output, _ = execute(*diff(subvolume, snapshot["gen"]), read_out=True)
+  output, _ = execute(*diff(subvolume, generation), read_out=True)
   output = output.decode("utf-8")[:-1].split("\n")
   # The diff output usually is ended by a line such as:
   # "transid marker was" followed by a generation ID. We should ignore

@@ -321,6 +321,22 @@ class TestRepository(BtrfsRepositoryTestCase):
       self.assertEqual(set(files), expected)
 
 
+  def testRepositoryDiffNoDiffAfterSnapshot(self):
+    """Verify that after taking a snapshot the reported diff is empty."""
+    with alias(self._repository) as r:
+      # Create a file with actual content.
+      createDir(r.path("root", "dir"))
+      createFile(r.path("root", "dir", "file2"), b"test-data")
+
+      expected = [join("dir", "file2")]
+      self.assertEqual(r.diff("root_snapshot", r.path("root")), expected)
+
+      # After taking another snapshot the file must no longer be
+      # reported as changed.
+      execute(*snapshot(r.path("root"), r.path("root_snapshot2")))
+      self.assertEqual(r.diff("root_snapshot2", r.path("root")), [])
+
+
   def testRepositoryDiffDeletion(self):
     """Check whether deleted files in a subvolume are reported by diff().
 

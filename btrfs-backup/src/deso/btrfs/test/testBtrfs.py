@@ -26,6 +26,7 @@ from deso.btrfs.command import (
   create,
   delete,
   deserialize,
+  diff,
   serialize,
   snapshot,
   sync,
@@ -132,6 +133,17 @@ class TestBtrfsSnapshot(BtrfsSnapshotTestCase):
       regex = "Read-only file"
       with self.assertRaisesRegex(OSError, regex):
         createFile(m.path("root_snapshot", "file2"))
+
+
+  def testBtrfsDiffCanUseArbitraryGeneration(self):
+    """Verify that we are allowed to pass in an arbitrary generation to diff()."""
+    # Because of a supposed bug in btrfs' find-new generation handling
+    # we pass in a generation that is incremented once over the actual
+    # generation of the snapshot. Since this generation might not
+    # necessarily exist, this test case verifies that the program does
+    # not report an error in such a case.
+    with alias(self._mount) as m:
+      execute(*diff(m.path("root"), "1337"))
 
 
   def testBtrfsSerializeAndDeserialize(self):
