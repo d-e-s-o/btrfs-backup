@@ -394,6 +394,11 @@ def _sync(subvolume, src, dst):
 
 def sync(subvolumes, src, dst):
   """Sync the given subvolumes between two repositories, i.e., this one and a "remote" one."""
+  # Note that when we synchronize multiple subvolumes and one of the
+  # last subvolume synchronizations fails (for whatever reason), the
+  # previously created and sync'ed snapshots will stay. This behavior is
+  # by design. Whenever a unit is successfully backed up we leave it
+  # this way.
   for subvolume in subvolumes:
     # Note that we use realpath here rather than abspath because we care
     # about the uniqueness of snapshot names and so the given subvolume

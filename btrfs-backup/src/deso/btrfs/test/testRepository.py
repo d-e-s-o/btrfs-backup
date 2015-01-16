@@ -52,6 +52,9 @@ from deso.btrfs.test.btrfsTest import (
 from deso.execute import (
   execute,
 )
+from glob import (
+  glob,
+)
 from os import (
   remove,
   symlink,
@@ -71,6 +74,15 @@ from unittest.mock import (
 
 class TestRepositoryBase(BtrfsTestCase):
   """Test basic repository functionality."""
+  def testRepositoryInNonExistentDirectory(self):
+    """Verify that creation of a repository in a non-existent directory fails."""
+    directory = "a-non-existent-directory"
+    regex = r"%s.*No such file or directory" % directory
+
+    with self.assertRaisesRegex(ChildProcessError, regex):
+      Repository(self._mount.path(directory))
+
+
   def testRepositoryListNoSnapshotPresent(self):
     """Verify that if no snapshot is present an empty list is returned."""
     repo = Repository(self._mount.path())
@@ -326,6 +338,24 @@ class TestRepository(BtrfsRepositoryTestCase):
 
 class TestBtrfsSync(BtrfsTestCase):
   """Test repository synchronization functionality."""
+  def testRepositorySyncFailsForNonExistentSubvolume(self):
+    """Verify that synchronization fails if a subvolume does not exist."""
+    with alias(self._mount) as m:
+      execute(*create(m.path("snapshots")))
+      execute(*create(m.path("backup")))
+
+      directory = "non-existent-directory"
+      regex = r"error accessing.*%s" % directory
+      src = Repository(m.path("snapshots"))
+      dst = Repository(m.path("backup"))
+
+      with self.assertRaisesRegex(ChildProcessError, regex):
+        syncRepos([m.path(directory)], src, dst)
+
+      self.assertEqual(glob(m.path("snapshots", "*")), [])
+      self.assertEqual(glob(m.path("backup", "*")), [])
+
+
   def testRepositorySync(self):
     """Test that we can sync a single subvolume between two repositories."""
     with patch("deso.btrfs.repository.datetime", wraps=datetime) as mock_now:
