@@ -52,6 +52,7 @@ from os.path import (
   abspath,
   dirname,
   join,
+  realpath,
 )
 from re import (
   compile as regex,
@@ -189,9 +190,14 @@ def _snapshotBaseName(subvolume):
     information encoded in it and does not depend on data variable over
     time.
   """
+  assert subvolume == realpath(subvolume)
+
   r = uname()
   name = "%s-%s-%s" % (r.nodename, r.sysname.lower(), r.machine)
-  path = subvolume.replace(sep, "_")
+  # Remove any leading or trailing directory separators and then replace
+  # the ones in the middle with underscores to make names look less
+  # confusing.
+  path = subvolume.strip(sep).replace(sep, "_")
   return "%s-%s" % (name, path)
 
 
@@ -389,7 +395,10 @@ def _sync(subvolume, src, dst):
 def sync(subvolumes, src, dst):
   """Sync the given subvolumes between two repositories, i.e., this one and a "remote" one."""
   for subvolume in subvolumes:
-    _sync(subvolume, src, dst)
+    # Note that we use realpath here rather than abspath because we care
+    # about the uniqueness of snapshot names and so the given subvolume
+    # path has to be in canonical form.
+    _sync(realpath(subvolume), src, dst)
 
 
 def _diff(snapshot, subvolume):

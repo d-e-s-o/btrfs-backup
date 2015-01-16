@@ -54,10 +54,12 @@ from deso.execute import (
 )
 from os import (
   remove,
+  symlink,
 )
 from os.path import (
   isfile,
   join,
+  pardir,
 )
 from unittest import (
   main,
@@ -456,6 +458,38 @@ class TestBtrfsSync(BtrfsTestCase):
             self.assertTrue(isfile(dst.path(local["path"], "bin", "test.py")))
             self.assertTrue(isfile(dst.path(local["path"], "bin", "test.sh")))
             self.assertTrue(isfile(dst.path(root["path"], ".ssh", "key.pub")))
+
+
+  def testRepositoryUniqueSnapshotName(self):
+    """Verify that subvolume paths are correctly canonicalized for snapshot names."""
+    with alias(self._mount) as m:
+      createDir(m.path("home"))
+
+      execute(*create(m.path("home", "user")))
+      execute(*create(m.path("snapshots")))
+      execute(*create(m.path("backup")))
+
+      symlink(m.path("home", "user"), m.path("symlink"))
+
+      src = Repository(m.path("snapshots"))
+      dst = Repository(m.path("backup"))
+
+      # We have a real subvolume and a symbolic link to it. We try
+      # synchronizing both. The end result should be a single a snapshot
+      # because the canonical path to the "true" subvolume should be
+      # used.
+      syncRepos([m.path("symlink")], src, dst)
+      self.assertEqual(len(src.snapshots()), 1)
+      self.assertEqual(len(dst.snapshots()), 1)
+
+      # Also try with a different non-canonical path.
+      syncRepos([m.path("home", "user", pardir, "user")], src, dst)
+      self.assertEqual(len(src.snapshots()), 1)
+      self.assertEqual(len(dst.snapshots()), 1)
+
+      syncRepos([m.path("home", "user")], src, dst)
+      self.assertEqual(len(src.snapshots()), 1)
+      self.assertEqual(len(dst.snapshots()), 1)
 
 
 if __name__ == "__main__":
