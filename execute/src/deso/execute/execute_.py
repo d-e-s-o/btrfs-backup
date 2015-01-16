@@ -192,9 +192,19 @@ def _read(data):
 _OUT = POLLOUT | POLLHUP | POLLERR
 # The event mask for which to poll for a read channel (such as stdout).
 _IN = POLLPRI | POLLHUP | POLLIN
-# The event mask describing all error events on which we close the
-# respective file descriptor.
-_ERR = POLLHUP | POLLERR | POLLNVAL
+
+
+def eventToString(events):
+  """Convert an event set to a human readable string."""
+  errors = {
+    POLLERR:  "ERR",
+    POLLHUP:  "HUP",
+    POLLIN:   "IN",
+    POLLNVAL: "NVAL",
+    POLLOUT:  "OUT",
+    POLLPRI:  "PRI",
+  }
+  return "|".join([v for k, v in errors.items() if k & events])
 
 
 class _PipelineFileDescriptors:
@@ -294,16 +304,38 @@ class _PipelineFileDescriptors:
           if event & POLLOUT:
             close = _write(data)
           elif event & POLLIN or event & POLLPRI:
-            close = _read(data)
+            if event & POLLHUP:
+              # In case we received a combination of a data-is-available
+              # and a HUP event we need to make sure that we flush the
+              # entire pipe buffer before we stop the polling. Otherwise
+              # we might leave data unread that was successfully sent to
+              # us.
+              # Note that from a logical point of view this problem
+              # occurs only in the receive case. In the write case we
+              # have full control over the file descriptor ourselves and
+              # if the remote side closes its part there is no point in
+              # sending any more data.
+              while not _read(data):
+                pass
+            else:
+              close = _read(data)
 
           # We explicitly (and early, compared to the defers we
-          # scheduled previously) close the file descriptor on all error
-          # events and POLLHUP, or when we received EOF (for reading) or
-          # run out of data to send (for writing).
-          if event & _ERR or close:
+          # scheduled previously) close the file descriptor on POLLHUP,
+          # when we received EOF (for reading), or run out of data to
+          # send (for writing).
+          if event & POLLHUP or close:
             data["close"]()
             data["unreg"]()
             del polls[fd]
+
+          # All error codes are reported to clients such that they can
+          # deal with potentially incomplete data.
+          if event & (POLLERR | POLLNVAL):
+            string = eventToString(event)
+            error = "Error while polling for new data, event: {s} ({e})"
+            error = error.format(s=string, e=event)
+            raise ConnectionError(error)
 
       return self._stdout["data"] if self._stdout else b"",\
              self._stderr["data"] if self._stderr else b""

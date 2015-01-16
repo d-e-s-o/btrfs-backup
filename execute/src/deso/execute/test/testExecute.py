@@ -25,11 +25,22 @@ from deso.execute import (
   formatPipeline,
   pipeline as pipeline_,
 )
+from deso.execute.execute_ import (
+  eventToString,
+)
 from os import (
   remove,
 )
 from os.path import (
   isfile,
+)
+from select import (
+  POLLERR,
+  POLLHUP,
+  POLLIN,
+  POLLNVAL,
+  POLLOUT,
+  POLLPRI,
 )
 from tempfile import (
   mktemp,
@@ -65,6 +76,36 @@ def pipeline(commands, data_in=None, read_out=False, read_err=False):
 
 class TestExecute(TestCase):
   """A test case for command execution functionality."""
+  def testExecuteErrorEventToStringSingle(self):
+    """Verify that our event to string conversion works as expected."""
+    self.assertEqual(eventToString(POLLERR),  "ERR")
+    self.assertEqual(eventToString(POLLHUP),  "HUP")
+    self.assertEqual(eventToString(POLLIN),   "IN")
+    self.assertEqual(eventToString(POLLNVAL), "NVAL")
+    self.assertEqual(eventToString(POLLOUT),  "OUT")
+    self.assertEqual(eventToString(POLLPRI),  "PRI")
+
+
+  def testExecuteErrorEventToStringMultiple(self):
+    """Verify that our event to string conversion works as expected."""
+    # Note that we cannot say for sure what the order of the event codes
+    # in the string will be, so we have to check for all possible
+    # outcomes.
+    s = eventToString(POLLERR | POLLHUP)
+    self.assertTrue(s == "ERR|HUP" or s == "HUP|ERR", s)
+
+    s = eventToString(POLLIN | POLLNVAL)
+    self.assertTrue(s == "IN|NVAL" or s == "NVAL|IN", s)
+
+    s = eventToString(POLLHUP | POLLOUT | POLLERR)
+    self.assertTrue(s == "HUP|OUT|ERR" or
+                    s == "HUP|ERR|OUT" or
+                    s == "OUT|HUP|ERR" or
+                    s == "OUT|ERR|HUP" or
+                    s == "ERR|HUP|OUT" or
+                    s == "ERR|OUT|HUP", s)
+
+
   def testExecuteAndNoOutput(self):
     """Test command execution and output retrieval for empty output."""
     output, _ = execute(_TRUE, read_out=True)
