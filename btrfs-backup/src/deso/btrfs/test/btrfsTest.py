@@ -226,6 +226,12 @@ class BtrfsTestCase(TestCase):
     super().tearDown()
 
 
+  def assertContains(self, file_, content):
+    """Verify that a file has the given content."""
+    with open(file_, "r") as handle:
+      self.assertEqual(handle.read(), content)
+
+
 class BtrfsSnapshotTestCase(BtrfsTestCase):
   """A test case subclass that provides a btrfs snapshot.
 

@@ -22,6 +22,9 @@
 from deso.btrfs.alias import (
   alias,
 )
+from deso.btrfs.command import (
+  delete,
+)
 from deso.btrfs.main import (
   main as btrfsMain,
 )
@@ -31,11 +34,14 @@ from deso.btrfs.test.btrfsTest import (
   make,
   Mount,
 )
-from glob import (
-  glob,
+from deso.execute import (
+  execute,
 )
 from os.path import (
-  isfile,
+  join,
+)
+from glob import (
+  glob,
 )
 from sys import (
   argv,
@@ -49,6 +55,33 @@ class TestMain(BtrfsTestCase):
   """A test case for testing of the progam's main functionality."""
   def testRun(self):
     """Test a simple run of the program with two subvolumes."""
+    def wipeSubvolumes(path):
+      """Remove all subvolumes in a given path (non recursively)."""
+      snapshots = glob(join(path, "*"))
+
+      for snapshot in snapshots:
+        execute(*delete(snapshot))
+
+      self.assertEqual(glob(join(path, "*")), [])
+
+    def run(src, dst, *options):
+      """Run the program to work on two subvolumes."""
+      args = [
+        "-s", m.path("home", "user"),
+        "--subvolume=%s" % m.path("root"),
+        src, dst
+      ]
+      result = btrfsMain([argv[0]] + args + list(options))
+      self.assertEqual(result, 0)
+
+    def backup():
+      """Invoke the program to backup snapshots/subvolumes."""
+      run(m.path("snapshots"), b.path("backup"))
+
+    def restore():
+      """Invoke the program to restore snapshots/subvolumes."""
+      run(b.path("backup"), m.path("snapshots"), "--restore")
+
     with alias(self._mount) as m:
       # We backup our data to a different btrfs volume.
       with BtrfsDevice() as btrfs:
@@ -60,18 +93,25 @@ class TestMain(BtrfsTestCase):
           make(m, "snapshots")
           make(b, "backup")
 
-          args = "-s {user} --subvolume {root} {src} {dst}"
-          args = args.format(user=m.path("home", "user"),
-                             root=m.path("root"),
-                             src=m.path("snapshots"),
-                             dst=b.path("backup"))
-          result = btrfsMain([argv[0]] + args.split())
-          self.assertEqual(result, 0)
+          # Case 1) Run in ordinary fashion to backup data into a
+          #         separate btrfs backup volume.
+          backup()
 
           user, root = glob(b.path("backup", "*"))
 
-          self.assertTrue(isfile(m.path(user, "data", "movie.mp4")))
-          self.assertTrue(isfile(m.path(root, ".ssh", "key.pub")))
+          self.assertContains(join(user, "data", "movie.mp4"), "abcdefgh")
+          self.assertContains(join(root, ".ssh", "key.pub"), "1234567890")
+
+          # Case 2) Delete all created snapshots (really only the
+          #         snapshots for now) from our "source" and try
+          #         restoring them from the backup.
+          wipeSubvolumes(m.path("snapshots"))
+          restore()
+
+          user, root = glob(m.path("snapshots", "*"))
+
+          self.assertContains(m.path(user, "data", "movie.mp4"), "abcdefgh")
+          self.assertContains(m.path(root, ".ssh", "key.pub"), "1234567890")
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@
 
 from deso.btrfs.repository import (
   Repository,
+  restore as restore_,
   sync,
 )
 
@@ -34,6 +35,9 @@ class Program:
     self._dst_repo = Repository(dst_repo)
 
 
-  def run(self):
+  def run(self, restore=False):
     """Run the program, start the synchronization."""
-    sync(self._subvolumes, self._src_repo, self._dst_repo)
+    if not restore:
+      sync(self._subvolumes, self._src_repo, self._dst_repo)
+    else:
+      restore_(self._subvolumes, self._src_repo, self._dst_repo)

@@ -36,10 +36,18 @@ a btrfs subvolume:                                                <br />
 
 The idea is that 'snapshots' will be the source repository, 'backup'
 will be the destination repository, and 'subvolume' is the btrfs
-subvolume to backup. In order to create a backup, use the following
-command:
+subvolume to backup.
+
+### Backup
+In order to create a backup, use the following command:
 
 $ btrfs-backup --subvolume=subvolume/ snapshots/ backup/
 
 The -s/--subvolume option can be supplied multiple times in order to
 perform a backup of multiple subvolumes.
+
+### Restore
+To restore the latest snapshot for the given subvolume from the backup,
+the following command can be used:
+
+$ btrfs-backup --restore --subvolume=subvolume/ backup/ snapshots/

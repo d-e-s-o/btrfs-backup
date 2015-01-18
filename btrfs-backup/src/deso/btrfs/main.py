@@ -42,7 +42,7 @@ def version():
   return "0.1"
 
 
-def run(subvolumes, src_repo, dst_repo):
+def run(subvolumes, src_repo, dst_repo, **kwargs):
   """Start actual execution."""
   try:
     # This import pulls in all required modules and we check for
@@ -55,7 +55,7 @@ def run(subvolumes, src_repo, dst_repo):
 
   try:
     program = Program(subvolumes, src_repo, dst_repo)
-    program.run()
+    program.run(**kwargs)
     return 0
   except ChildProcessError as e:
     print("Execution failure:\n\"%s\"" % e, file=stderr)
@@ -82,6 +82,12 @@ def main(argv):
     help="Show this help message and exit.",
   )
   parser.add_argument(
+    "-r", "--restore", action="store_true", dest="restore", default=False,
+    help="Restore from a backup repository rather than saving to it. "
+         "This option triggers the opposite behavior to what is done by "
+         "default.",
+  )
+  parser.add_argument(
     "-s", "--subvolume", action="append", metavar="subvolume", nargs=1,
     dest="subvolumes", required=True,
     help="Path to a subvolume to include in the backup. Can be supplied "
@@ -98,4 +104,5 @@ def main(argv):
   # The namespace's subvolumes are stored as a list of list of strings.
   # Convert it to a list of strings.
   subvolumes = [x for x, in namespace.subvolumes]
-  return run(subvolumes, namespace.src, namespace.dst)
+  return run(subvolumes, namespace.src, namespace.dst,
+             restore=namespace.restore)

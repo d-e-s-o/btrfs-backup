@@ -107,9 +107,10 @@ class TestBtrfsSubvolume(BtrfsTestCase):
              snapshot), we trust that if we properly create a snapshot
              it will just have these properties.
     """
-    data = b"test-string-to-read-from-snapshot"
-
     with alias(self._mount) as m:
+      data = b"test-string-to-read-from-snapshot"
+      file_ = m.path("root_snapshot", "file")
+
       execute(*create(m.path("root")))
       make(m, "root", "file", data=data)
 
@@ -118,8 +119,7 @@ class TestBtrfsSubvolume(BtrfsTestCase):
 
       # Verify that the snapshot file and the original have the same
       # content.
-      with open(m.path("root_snapshot", "file"), "r") as handle:
-        self.assertEqual(handle.read(), data.decode("utf-8"))
+      self.assertContains(file_, data.decode("utf-8"))
 
 
 class TestBtrfsSnapshot(BtrfsSnapshotTestCase):

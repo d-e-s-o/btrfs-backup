@@ -406,6 +406,42 @@ def sync(subvolumes, src, dst):
     _sync(realpath(subvolume), src, dst)
 
 
+def _restore(subvolume, src, dst, snapshots):
+  """Restore a snapshot by transferal from another repository."""
+  snapshot = _findMostRecent(snapshots, subvolume)
+  # In case the given source repository does not contain any snapshots
+  # for the given subvolume we cannot do anything but signal that to
+  # the user.
+  if not snapshot:
+    error = "No snapshot to restore found for subvolume \"{s}\" in \"{r}\""
+    error = error.format(s=subvolume, r=src.path())
+    raise FileNotFoundError(error)
+
+  subvolume = realpath(subvolume)
+  snapshot = snapshot["path"]
+
+  # Restoration of a subvolume (or better: a snapshot of a subvolume)
+  # involves a subset of the steps we do when we perform a full sync:
+  # the deployment only.
+  # TODO: We could actually go one step further and not just restore
+  #       the snapshot but also the actual subvolume. Of course, this
+  #       behavior only makes sense if the subvolume does no longer
+  #       exist.
+  _deploy(snapshot, snapshot, src, dst, snapshots, subvolume)
+
+
+def restore(subvolumes, src, dst):
+  """Restore snapshots by transferal from another repository."""
+  # Note that compared to _sync() we do not have to retrieve a new list
+  # of snapshots on the source after every subvolume transfer because in
+  # this step we are sure that we do not create any new snapshots (and
+  # we assume nobody else does).
+  snapshots = src.snapshots()
+
+  for subvolume in subvolumes:
+    _restore(subvolume, src, dst, snapshots)
+
+
 def _diff(snapshot, subvolume):
   """Find the files that changed in a given subvolume with respect to a snapshot."""
   # Because of an apparent bug in btrfs(8) (or a misunderstanding on my

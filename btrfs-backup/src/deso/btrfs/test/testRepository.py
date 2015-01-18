@@ -28,6 +28,7 @@ from deso.btrfs.alias import (
 )
 from deso.btrfs.command import (
   create,
+  delete,
   deserialize,
   serialize,
   snapshot,
@@ -35,6 +36,7 @@ from deso.btrfs.command import (
 )
 from deso.btrfs.repository import (
   Repository,
+  restore,
   _findCommonSnapshots,
   _findRoot,
   _snapshots,
@@ -514,6 +516,101 @@ class TestBtrfsSync(BtrfsTestCase):
       syncRepos([m.path("home", "user")], src, dst)
       self.assertEqual(len(src.snapshots()), 1)
       self.assertEqual(len(dst.snapshots()), 1)
+
+
+  def testRepositoryRestoreFailsIfNoSnapshotPresent(self):
+    """Verify an error gets raised if no snapshot to restore is found."""
+    with alias(self._mount) as m:
+      user = make(m, "home", "user", subvol=True)
+      snaps = make(m, "snapshots")
+      backup = make(m, "backup")
+
+      src = Repository(snaps)
+      dst = Repository(backup)
+
+      # Restoration must fail since we did not create a snapshot yet.
+      regex = r"snapshot to restore found.*home.*user"
+      with self.assertRaisesRegex(FileNotFoundError, regex):
+        restore([user], dst, src)
+
+      # Create a snapshot.
+      syncRepos([user], src, dst)
+
+      # Another attempt, this time we have a snapshot of /home/user but
+      # none of /home/user1, so we should see a failure again.
+      regex = r"snapshot to restore found.*home.*user1"
+      with self.assertRaisesRegex(FileNotFoundError, regex):
+        restore([m.path("home", "user1")], dst, src)
+
+
+  def testRepositorySyncAndRestore(self):
+    """Test restoring a snapshot after it was backed up."""
+    with alias(self._mount) as m:
+      make(m, "home", "user", subvol=True)
+      make(m, "home", "user", "test-dir", "test", data=b"test-content")
+
+      snaps = make(m, "snapshots")
+      backup = make(m, "backup")
+
+      src = Repository(snaps)
+      dst = Repository(backup)
+
+      syncRepos([m.path("home", "user")], src, dst)
+
+      snap, = src.snapshots()
+      # Delete the snapshot from the source directory.
+      execute(*delete(src.path(snap["path"])))
+
+      self.assertEqual(src.snapshots(), [])
+      self.assertEqual(glob(join(snaps, "*")), [])
+
+      restore([m.path("home", "user")], dst, src)
+
+      snap, = src.snapshots()
+      file_ = src.path(snap["path"], "test-dir", "test")
+      self.assertContains(file_, "test-content")
+
+
+  def testRepositoryRestorePlain(self):
+    """Test restoration of a snapshot if the destination btrfs volume got wiped."""
+    with alias(self._mount) as b:
+      # This time we create our test harness on the other btrfs device.
+      with BtrfsDevice() as btrfs:
+        with Mount(btrfs.device()) as s:
+          make(s, "home", "user", subvol=True)
+          make(s, "home", "user", "dir", "test1", data=b"content1")
+
+          src = Repository(make(s, "snapshots"))
+          bak = Repository(make(b, "backup"))
+
+          # Remember absolute path of the subvolume to backup for later
+          # use.
+          subvolume = s.path("home", "user")
+          syncRepos([subvolume], src, bak)
+
+          # Create another snapshot with additional data.
+          make(s, "home", "user", "dir2", "test2", data=b"content2")
+          syncRepos([subvolume], src, bak)
+
+      # Create a new (empty) btrfs file system.
+      with BtrfsDevice() as btrfs:
+        with Mount(btrfs.device()) as d:
+          self.assertEqual(glob(d.path("*")), [])
+
+          # Restore the snapshot from the backup. Note that we had to
+          # remember the absolute path of the original directory of the
+          # subvolume we backed up because that path likely changed when
+          # we created a new btrfs device and mounted it (a new
+          # temporary directory is used).
+          dst = Repository(d.path())
+          restore([subvolume], bak, dst)
+          snap, = dst.snapshots()
+
+          file1 = dst.path(snap["path"], "dir", "test1")
+          file2 = dst.path(snap["path"], "dir2", "test2")
+
+          self.assertContains(file1, "content1")
+          self.assertContains(file2, "content2")
 
 
 if __name__ == "__main__":
