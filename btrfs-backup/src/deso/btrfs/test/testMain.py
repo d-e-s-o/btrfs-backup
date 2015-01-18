@@ -22,21 +22,14 @@
 from deso.btrfs.alias import (
   alias,
 )
-from deso.btrfs.command import (
-  create,
-)
 from deso.btrfs.main import (
   main as btrfsMain,
 )
 from deso.btrfs.test.btrfsTest import (
   BtrfsDevice,
   BtrfsTestCase,
-  createDir,
-  createFile,
+  make,
   Mount,
-)
-from deso.execute import (
-  execute,
 )
 from glob import (
   glob,
@@ -60,21 +53,12 @@ class TestMain(BtrfsTestCase):
       # We backup our data to a different btrfs volume.
       with BtrfsDevice() as btrfs:
         with Mount(btrfs.device()) as b:
-          subvolumes = [
-            m.path("home", "user"),
-            m.path("root"),
-          ]
-          createDir(m.path("snapshots"))
-          createDir(m.path("home"))
-          createDir(b.path("backup"))
-
-          for subvolume in subvolumes:
-            execute(*create(subvolume))
-
-          createDir(m.path("home", "user", "data"))
-          createFile(m.path("home", "user", "data", "movie.mp4"), b"abcdefgh")
-          createDir(m.path("root", ".ssh"))
-          createFile(m.path("root", ".ssh", "key.pub"), b"1234567890")
+          make(m, "home", "user", subvol=True)
+          make(m, "home", "user", "data", "movie.mp4", data=b"abcdefgh")
+          make(m, "root", subvol=True)
+          make(m, "root", ".ssh", "key.pub", data=b"1234567890")
+          make(m, "snapshots")
+          make(b, "backup")
 
           args = "-s {user} --subvolume {root} {src} {dst}"
           args = args.format(user=m.path("home", "user"),

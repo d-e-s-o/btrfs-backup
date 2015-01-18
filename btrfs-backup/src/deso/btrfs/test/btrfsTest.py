@@ -50,13 +50,15 @@ from os import (
   O_EXCL,
   O_RDWR,
   close,
-  mkdir,
-  open as mkfile,
+  makedirs,
+  open as open_,
   remove,
   rmdir,
+  symlink,
   write,
 )
 from os.path import (
+  dirname,
   join,
 )
 from unittest import (
@@ -72,7 +74,7 @@ _UMOUNT = findCommand("umount")
 
 def createFile(path, content=None):
   """Create a file given an absolute path."""
-  fd = mkfile(path, O_CREAT | O_EXCL | O_RDWR)
+  fd = open_(path, O_CREAT | O_EXCL | O_RDWR)
   try:
     if content:
       write(fd, content)
@@ -80,9 +82,29 @@ def createFile(path, content=None):
     close(fd)
 
 
-def createDir(path):
-  """Create a directory given an absolute path."""
-  mkdir(path)
+def make(container, *components, data=None, link=None, subvol=False):
+  """Create a file, symlink, directory, or subvolume relative to an object with a path() method."""
+  def assertOneMax(x, y, z):
+    """Assert that that at most one of the three value is true."""
+    assert int(bool(x)) + int(bool(y)) + int(bool(z)) <= 1
+
+  assertOneMax(subvol, link, data is not None)
+
+  path = container.path(*components)
+  makedirs(dirname(path), exist_ok=True)
+
+  if subvol:
+    execute(*create(path))
+  elif link:
+    symlink(path, container.path(link))
+  # Explicitly compare against none here to allow for empty file
+  # creation by passing in b''.
+  elif data is not None:
+    createFile(path, data)
+  else:
+    makedirs(path, exist_ok=True)
+
+  return path
 
 
 class LoopBackDevice:

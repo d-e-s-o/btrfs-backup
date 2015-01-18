@@ -35,9 +35,8 @@ from deso.btrfs.test.btrfsTest import (
   BtrfsDevice,
   BtrfsSnapshotTestCase,
   BtrfsTestCase,
+  make,
   Mount,
-  createDir,
-  createFile,
 )
 from deso.execute import (
   execute,
@@ -80,8 +79,7 @@ class TestBtrfsSubvolume(BtrfsTestCase):
     # Create a subvolume and some files in it.
     with alias(self._mount) as m:
       execute(*create(m.path("root")))
-      createDir(m.path("root", "dir"))
-      createFile(m.path("root", "dir", "file"))
+      make(m, "root", "dir", "file", data=b"test")
 
       self.assertTrue(isdir(m.path("root")))
       self.assertTrue(isdir(m.path("root", "dir")))
@@ -92,7 +90,8 @@ class TestBtrfsSubvolume(BtrfsTestCase):
     """Verify that we can delete a btrfs subvolume."""
     with alias(self._mount) as m:
       execute(*create(m.path("root")))
-      createFile(m.path("root", "file"))
+      make(m, "root", "file", data=b"")
+      self.assertTrue(isfile(m.path("root", "file")))
       execute(*delete(m.path("root")))
 
       self.assertFalse(isdir(m.path("root")))
@@ -112,7 +111,7 @@ class TestBtrfsSubvolume(BtrfsTestCase):
 
     with alias(self._mount) as m:
       execute(*create(m.path("root")))
-      createFile(m.path("root", "file"), data)
+      make(m, "root", "file", data=data)
 
       execute(*snapshot(m.path("root"),
                         m.path("root_snapshot")))
@@ -132,7 +131,7 @@ class TestBtrfsSnapshot(BtrfsSnapshotTestCase):
       # 'OSError: [Errno 30] Read-only file system'.
       regex = "Read-only file"
       with self.assertRaisesRegex(OSError, regex):
-        createFile(m.path("root_snapshot", "file2"))
+        make(m, "root_snapshot", "file2", data=b"")
 
 
   def testBtrfsDiffCanUseArbitraryGeneration(self):
@@ -151,7 +150,7 @@ class TestBtrfsSnapshot(BtrfsSnapshotTestCase):
     with alias(self._mount) as m:
       # The snapshot will manifest itself under the same name it was
       # created. So we need a sub-directory to contain it.
-      createDir(m.path("sent"))
+      make(m, "sent")
       # Make sure the snapshot is persisted to disk before serializing
       # it.
       execute(*sync(m.path()))

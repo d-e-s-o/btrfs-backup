@@ -45,8 +45,7 @@ from deso.btrfs.test.btrfsTest import (
   BtrfsRepositoryTestCase,
   BtrfsSnapshotTestCase,
   BtrfsTestCase,
-  createDir,
-  createFile,
+  make,
   Mount,
 )
 from deso.execute import (
@@ -57,7 +56,6 @@ from glob import (
 )
 from os import (
   remove,
-  symlink,
 )
 from os.path import (
   isfile,
@@ -98,16 +96,15 @@ class TestRepositoryBase(BtrfsTestCase):
   def testRepositorySubvolumeFindRootFromBelowRoot(self):
     """Test retrieval of the absolute path of the btrfs root from a sub-directory."""
     with alias(self._mount) as m:
-      subdirectory = m.path("dir")
-      createDir(subdirectory)
-      self.assertEqual(_findRoot(subdirectory), m.path())
+      directory = make(m, "dir")
+      self.assertEqual(_findRoot(directory), m.path())
 
 
   def testRepositorySubvolumeFindRootFromSubvolume(self):
     """Test retrieval of the absolute path of the btrfs root from a true subvolume."""
     with alias(self._mount) as m:
-      execute(*create(m.path("root")))
-      self.assertEqual(_findRoot(m.path("root")), m.path())
+      root = make(m, "root", subvol=True)
+      self.assertEqual(_findRoot(root), m.path())
 
 
   def testRepositoryFindCommonSnapshots(self):
@@ -189,16 +186,16 @@ class TestRepositoryBase(BtrfsTestCase):
       # Create a subvolume and file with some data so that the meta data
       # does not make up the majority of the byte stream once
       # serialized.
-      execute(*create(m.path("root")))
-      createFile(m.path("root", "file2"), b"data" * 1024)
-      createDir(m.path("sent"))
+      make(m, "root", subvol=True)
+      make(m, "root", "file2", data=b"data" * 1024)
+      make(m, "sent", subvol=True)
 
       # Now we need an initial snapshot.
       snap("snap1")
       size1 = transfer("snap1")
 
       # Create a new file with some data.
-      createFile(m.path("root", "file3"), b"data" * 512)
+      make(m, "root", "file3", data=b"data" * 512)
       # Create a second snapshot.
       snap("snap2")
       # Serialize only the differences to the first snapshot.
@@ -217,20 +214,20 @@ class TestRepositorySnapshots(BtrfsSnapshotTestCase):
     """Verify that if no snapshot is present in a directory an empty list is returned."""
     with alias(self._mount) as m:
       # Create a new sub-directory where no snapshots are present.
-      createDir(m.path("dir"))
+      directory = make(m, "dir")
       # TODO: The assertion should really be assertEqual! I consider
       #       this behavior a bug because we pass in the -o option to
       #       the list command which is promoted as: "print only
       #       subvolumes below specified path".
       #       There is no subvolume below the given path, so reporting a
       #       snapshot here is wrong.
-      self.assertNotEqual(_snapshots(m.path("dir")), [])
+      self.assertNotEqual(_snapshots(directory), [])
 
 
   def testRepositoryListOnlySnapshotsInRepository(self):
     """Verify that listing snapshots in a repository not in the btrfs root works."""
     with alias(self._mount) as m:
-      createDir(m.path("repository"))
+      make(m, "repository")
 
       execute(*snapshot(m.path("root"),
                         m.path("root_snapshot2")))
@@ -289,9 +286,9 @@ class TestRepository(BtrfsRepositoryTestCase):
       issue.
     """
     with alias(self._repository) as r:
-      createFile(r.path("root", "file2"))
-      createFile(r.path("root", "file3"))
-      createFile(r.path("root", "file4"))
+      make(r, "root", "file2", data=b"")
+      make(r, "root", "file3", data=b"")
+      make(r, "root", "file4", data=b"")
 
       self.assertEqual(r.diff("root_snapshot", r.path("root")), [])
       self.assertTrue(isfile(r.path("root", "file2")))
@@ -300,18 +297,13 @@ class TestRepository(BtrfsRepositoryTestCase):
   def testRepositoryDiff(self):
     """Verify that we can retrieve a list of changed files for a subvolume."""
     with alias(self._repository) as r:
-      file1 = r.path("root", "file")
-      dir1 = r.path("root", "dir")
-      file2 = r.path("root", "dir", "file2")
-
       # Write something into the existing file to have it contain
       # changes over the snapshot.
-      with open(file1, "w") as f:
+      with open(r.path("root", "file"), "w") as f:
         f.write("\0")
 
       # Also create a new file with some content.
-      createDir(dir1)
-      createFile(file2, b"test-data")
+      make(r, "root", "dir", "file2", data=b"test-data")
 
       files = r.diff("root_snapshot", r.path("root"))
       # We cannot tell for sure the order in which the files appear so use
@@ -325,8 +317,7 @@ class TestRepository(BtrfsRepositoryTestCase):
     """Verify that after taking a snapshot the reported diff is empty."""
     with alias(self._repository) as r:
       # Create a file with actual content.
-      createDir(r.path("root", "dir"))
-      createFile(r.path("root", "dir", "file2"), b"test-data")
+      make(r, "root", "dir", "file2", data=b"test-data")
 
       expected = [join("dir", "file2")]
       self.assertEqual(r.diff("root_snapshot", r.path("root")), expected)
@@ -357,19 +348,19 @@ class TestBtrfsSync(BtrfsTestCase):
   def testRepositorySyncFailsForNonExistentSubvolume(self):
     """Verify that synchronization fails if a subvolume does not exist."""
     with alias(self._mount) as m:
-      execute(*create(m.path("snapshots")))
-      execute(*create(m.path("backup")))
+      snaps = make(m, "snapshots")
+      backup = make(m, "backup")
 
       directory = "non-existent-directory"
       regex = r"error accessing.*%s" % directory
-      src = Repository(m.path("snapshots"))
-      dst = Repository(m.path("backup"))
+      src = Repository(snaps)
+      dst = Repository(backup)
 
       with self.assertRaisesRegex(ChildProcessError, regex):
         syncRepos([m.path(directory)], src, dst)
 
-      self.assertEqual(glob(m.path("snapshots", "*")), [])
-      self.assertEqual(glob(m.path("backup", "*")), [])
+      self.assertEqual(glob(join(snaps, "*")), [])
+      self.assertEqual(glob(join(backup, "*")), [])
 
 
   def testRepositorySync(self):
@@ -378,15 +369,11 @@ class TestBtrfsSync(BtrfsTestCase):
       with alias(self._mount) as m:
         mock_now.now.return_value = datetime(2015, 1, 5, 22, 34)
 
-        execute(*create(m.path("root")))
-        createDir(m.path("root", "dir"))
-        createFile(m.path("root", "dir", "file"))
+        make(m, "root", subvol=True)
+        make(m, "root", "dir", "file", data=b"")
 
-        createDir(m.path("repo1"))
-        createDir(m.path("repo2"))
-
-        src = Repository(m.path("repo1"))
-        dst = Repository(m.path("repo2"))
+        src = Repository(make(m, "repo1"))
+        dst = Repository(make(m, "repo2"))
 
         # Case 1) Sync repositories initially. A snapshot should be taken
         #         in the source repository and transferred to the remote
@@ -419,7 +406,7 @@ class TestBtrfsSync(BtrfsTestCase):
         mock_now.now.return_value = datetime(2015, 1, 5, 22, 35)
 
         # Create a new file with some data in it.
-        createFile(m.path("root", "dir", "file2"), b"new-data")
+        make(m, "root", "dir", "file2", data=b"new-data")
 
         syncRepos([m.path("root")], src, dst)
 
@@ -437,7 +424,7 @@ class TestBtrfsSync(BtrfsTestCase):
         #         already exists (the time stamps are equal). The system
         #         needs to make sure to number snapshots appropriately
         #         if one with the same name already exists.
-        createFile(m.path("root", "dir", "file3"), b"even-more-new-data")
+        make(m, "root", "dir", "file3", data=b"even-more-new-data")
 
         syncRepos([m.path("root")], src, dst)
 
@@ -446,7 +433,7 @@ class TestBtrfsSync(BtrfsTestCase):
 
         # Case 5) Try once more to see that the appended number is
         #         properly incremented and not just appended to or so.
-        createFile(m.path("root", "dir", "file4"), b"even-even-more-new-data")
+        make(m, "root", "dir", "file4", data=b"even-even-more-new-data")
 
         syncRepos([m.path("root")], src, dst)
 
@@ -461,24 +448,20 @@ class TestBtrfsSync(BtrfsTestCase):
         with Mount(btrfs.device()) as d:
           with alias(self._mount) as s:
             mock_now.now.return_value = datetime.now()
+            make(s, "home")
             subvolumes = [
               s.path("home", "user"),
               s.path("home", "user", "local"),
               s.path("root"),
             ]
-            createDir(s.path("snapshots"))
-            createDir(s.path("home"))
-            createDir(d.path("backup"))
-
             for subvolume in subvolumes:
               execute(*create(subvolume))
 
-            createDir(s.path("home", "user", "data"))
-            createFile(s.path("home", "user", "data", "movie.mp4"), b"abcdefgh")
-            createDir(s.path("home", "user", "local", "bin"))
-            createFile(s.path("home", "user", "local", "bin", "test.sh"), b"#!/bin/sh")
-            createDir(s.path("root", ".ssh"))
-            createFile(s.path("root", ".ssh", "key.pub"), b"1234567890")
+            make(s, "home", "user", "data", "movie.mp4", data=b"abcdefgh")
+            make(s, "home", "user", "local", "bin", "test.sh", data=b"#!/bin/sh")
+            make(s, "root", ".ssh", "key.pub", data=b"1234567890")
+            make(s, "snapshots")
+            make(d, "backup")
 
             src = Repository(s.path("snapshots"))
             dst = Repository(d.path("backup"))
@@ -491,8 +474,8 @@ class TestBtrfsSync(BtrfsTestCase):
             self.assertTrue(isfile(dst.path(local["path"], "bin", "test.sh")))
             self.assertTrue(isfile(dst.path(root["path"], ".ssh", "key.pub")))
 
-            createFile(s.path("home", "user", "local", "bin", "test.py"), b"#!/usr/bin/python")
-            createFile(s.path("root", ".ssh", "authorized"), b"localhost")
+            make(s, "home", "user", "local", "bin", "test.py", data=b"#!/usr/bin/python")
+            make(s, "root", ".ssh", "authorized", data=b"localhost")
 
             # Advance time to avoid name clash.
             mock_now.now.return_value = mock_now.now.return_value + timedelta(seconds=1)
@@ -509,16 +492,11 @@ class TestBtrfsSync(BtrfsTestCase):
   def testRepositoryUniqueSnapshotName(self):
     """Verify that subvolume paths are correctly canonicalized for snapshot names."""
     with alias(self._mount) as m:
-      createDir(m.path("home"))
+      make(m, "home", "user", subvol=True)
+      make(m, "home", "user", link="symlink")
 
-      execute(*create(m.path("home", "user")))
-      execute(*create(m.path("snapshots")))
-      execute(*create(m.path("backup")))
-
-      symlink(m.path("home", "user"), m.path("symlink"))
-
-      src = Repository(m.path("snapshots"))
-      dst = Repository(m.path("backup"))
+      src = Repository(make(m, "snapshots"))
+      dst = Repository(make(m, "backup"))
 
       # We have a real subvolume and a symbolic link to it. We try
       # synchronizing both. The end result should be a single a snapshot
