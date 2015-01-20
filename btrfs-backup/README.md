@@ -51,3 +51,13 @@ To restore the latest snapshot for the given subvolume from the backup,
 the following command can be used:
 
 $ btrfs-backup --restore --subvolume=subvolume/ backup/ snapshots/
+
+Alternatively, you can use the --reverse option to keep the order of the
+source and destination repository that was used during backup (as
+opposed to restoration). This option exists for convenience only, so
+that not the entire command line has to be amended but rather two
+options can be appended to convert a backup operation into a restore
+operation.
+
+$ btrfs-backup --subvolume=subvolume/ snapshots/ backup/ --restore
+               --reverse

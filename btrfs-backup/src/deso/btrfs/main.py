@@ -19,6 +19,9 @@
 
 """The main module interfaces with the user input and sets up bits required for execution."""
 
+from deso.btrfs.alias import (
+  alias,
+)
 from sys import (
   stderr,
 )
@@ -88,6 +91,10 @@ def main(argv):
          "default.",
   )
   parser.add_argument(
+    "--reverse", action="store_true", dest="reverse", default=False,
+    help="Reverse (i.e., swap) the source and destination repositories.",
+  )
+  parser.add_argument(
     "-s", "--subvolume", action="append", metavar="subvolume", nargs=1,
     dest="subvolumes", required=True,
     help="Path to a subvolume to include in the backup. Can be supplied "
@@ -101,8 +108,15 @@ def main(argv):
   # Note that argv contains the path to the program as the first element
   # which we kindly ignore.
   namespace = parser.parse_args(argv[1:])
-  # The namespace's subvolumes are stored as a list of list of strings.
-  # Convert it to a list of strings.
-  subvolumes = [x for x, in namespace.subvolumes]
-  return run(subvolumes, namespace.src, namespace.dst,
-             restore=namespace.restore)
+
+  with alias(namespace) as ns:
+    # The namespace's subvolumes are stored as a list of list of
+    # strings. Convert it to a list of strings.
+    subvolumes = [x for x, in ns.subvolumes]
+
+    if ns.reverse:
+      src_repo, dst_repo = ns.dst, ns.src
+    else:
+      src_repo, dst_repo = ns.src, ns.dst
+
+    return run(subvolumes, src_repo, dst_repo, restore=ns.restore)

@@ -78,9 +78,16 @@ class TestMain(BtrfsTestCase):
       """Invoke the program to backup snapshots/subvolumes."""
       run(m.path("snapshots"), b.path("backup"))
 
-    def restore():
+    def restore(*options, reverse=False):
       """Invoke the program to restore snapshots/subvolumes."""
-      run(b.path("backup"), m.path("snapshots"), "--restore")
+      if not reverse:
+        src = b.path("backup")
+        dst = m.path("snapshots")
+      else:
+        src = m.path("snapshots")
+        dst = b.path("backup")
+
+      run(src, dst, "--restore", *options)
 
     with alias(self._mount) as m:
       # We backup our data to a different btrfs volume.
@@ -107,6 +114,19 @@ class TestMain(BtrfsTestCase):
           #         restoring them from the backup.
           wipeSubvolumes(m.path("snapshots"))
           restore()
+
+          user, root = glob(m.path("snapshots", "*"))
+
+          self.assertContains(m.path(user, "data", "movie.mp4"), "abcdefgh")
+          self.assertContains(m.path(root, ".ssh", "key.pub"), "1234567890")
+
+          # Case 3) Once again delete all snapshots but this time
+          #         restore them in conjunction with the --reverse
+          #         option.
+          wipeSubvolumes(m.path("snapshots"))
+
+          # This time we use the '--reverse' option.
+          restore("--reverse", reverse=True)
 
           user, root = glob(m.path("snapshots", "*"))
 
