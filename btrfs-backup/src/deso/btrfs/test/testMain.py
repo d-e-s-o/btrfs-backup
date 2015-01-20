@@ -55,14 +55,14 @@ class TestMain(BtrfsTestCase):
   """A test case for testing of the progam's main functionality."""
   def testRun(self):
     """Test a simple run of the program with two subvolumes."""
-    def wipeSubvolumes(path):
+    def wipeSubvolumes(path, pattern="*"):
       """Remove all subvolumes in a given path (non recursively)."""
-      snapshots = glob(join(path, "*"))
+      snapshots = glob(join(path, pattern))
 
       for snapshot in snapshots:
         execute(*delete(snapshot))
 
-      self.assertEqual(glob(join(path, "*")), [])
+      self.assertEqual(glob(join(path, pattern)), [])
 
     def run(src, dst, *options):
       """Run the program to work on two subvolumes."""
@@ -113,7 +113,7 @@ class TestMain(BtrfsTestCase):
           #         snapshots for now) from our "source" and try
           #         restoring them from the backup.
           wipeSubvolumes(m.path("snapshots"))
-          restore()
+          restore("--snapshots-only")
 
           user, root = glob(m.path("snapshots", "*"))
 
@@ -126,9 +126,22 @@ class TestMain(BtrfsTestCase):
           wipeSubvolumes(m.path("snapshots"))
 
           # This time we use the '--reverse' option.
-          restore("--reverse", reverse=True)
+          restore("--reverse", "--snapshots-only", reverse=True)
 
           user, root = glob(m.path("snapshots", "*"))
+
+          self.assertContains(m.path(user, "data", "movie.mp4"), "abcdefgh")
+          self.assertContains(m.path(root, ".ssh", "key.pub"), "1234567890")
+
+          # Case 4) Also delete the original subvolumes we snapshotted
+          #         and verify that they can be restored as well.
+          wipeSubvolumes(m.path("home"))
+          wipeSubvolumes(m.path(), pattern="root")
+          wipeSubvolumes(m.path("snapshots"))
+          restore()
+
+          user, = glob(m.path("home", "user"))
+          root, = glob(m.path("root"))
 
           self.assertContains(m.path(user, "data", "movie.mp4"), "abcdefgh")
           self.assertContains(m.path(root, ".ssh", "key.pub"), "1234567890")

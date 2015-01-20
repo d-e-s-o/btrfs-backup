@@ -406,8 +406,8 @@ def sync(subvolumes, src, dst):
     _sync(realpath(subvolume), src, dst)
 
 
-def _restore(subvolume, src, dst, snapshots):
-  """Restore a snapshot by transferal from another repository."""
+def _restore(subvolume, src, dst, snapshots, snapshots_only):
+  """Restore a snapshot/subvolume by transferal from another repository."""
   snapshot = _findMostRecent(snapshots, subvolume)
   # In case the given source repository does not contain any snapshots
   # for the given subvolume we cannot do anything but signal that to
@@ -420,18 +420,18 @@ def _restore(subvolume, src, dst, snapshots):
   subvolume = realpath(subvolume)
   snapshot = snapshot["path"]
 
-  # Restoration of a subvolume (or better: a snapshot of a subvolume)
-  # involves a subset of the steps we do when we perform a full sync:
-  # the deployment only.
-  # TODO: We could actually go one step further and not just restore
-  #       the snapshot but also the actual subvolume. Of course, this
-  #       behavior only makes sense if the subvolume does no longer
-  #       exist.
+  # Restoration of a subvolume involves a subset of the steps we do
+  # when we perform a full sync: the deployment.
   _deploy(snapshot, snapshot, src, dst, snapshots, subvolume)
 
+  # Now that we got the snapshot back on the destination repository,
+  # we can restore the actual subvolume from it (if desired).
+  if not snapshots_only:
+    execute(*mkSnapshot(dst.path(snapshot), subvolume, writable=True))
 
-def restore(subvolumes, src, dst):
-  """Restore snapshots by transferal from another repository."""
+
+def restore(subvolumes, src, dst, snapshots_only=False):
+  """Restore snapshots/subvolumes by transferal from another repository."""
   # Note that compared to _sync() we do not have to retrieve a new list
   # of snapshots on the source after every subvolume transfer because in
   # this step we are sure that we do not create any new snapshots (and
@@ -439,7 +439,7 @@ def restore(subvolumes, src, dst):
   snapshots = src.snapshots()
 
   for subvolume in subvolumes:
-    _restore(subvolume, src, dst, snapshots)
+    _restore(subvolume, src, dst, snapshots, snapshots_only)
 
 
 def _diff(snapshot, subvolume):

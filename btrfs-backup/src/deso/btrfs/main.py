@@ -101,6 +101,13 @@ def main(argv):
          "multiple times to include more than one subvolume.",
   )
   parser.add_argument(
+    "--snapshots-only", action="store_true", dest="snapshots_only",
+    default=False,
+    help="Restore only snapshots, not the entire source subvolume. "
+         "Valid only in restoration mode, i.e., together with "
+         "-r/--restore.",
+  )
+  parser.add_argument(
     "--version", action="version", version="%s %s" % (name(), version()),
     help="Show the program\'s version and exit.",
   )
@@ -119,4 +126,5 @@ def main(argv):
     else:
       src_repo, dst_repo = ns.src, ns.dst
 
-    return run(subvolumes, src_repo, dst_repo, restore=ns.restore)
+    return run(subvolumes, src_repo, dst_repo, restore=ns.restore,
+               snapshots_only=ns.snapshots_only)

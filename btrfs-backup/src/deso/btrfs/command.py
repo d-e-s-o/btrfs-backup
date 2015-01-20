@@ -52,9 +52,13 @@ def show(subvolume):
   return [_BTRFS, "subvolume", "show", subvolume]
 
 
-def snapshot(source, destination):
-  """Retrieve the command to create a read-only snapshot of a subvolume."""
-  return [_BTRFS, "subvolume", "snapshot", "-r", source, destination]
+def snapshot(source, destination, writable=False):
+  """Retrieve the command to create a snapshot of a subvolume."""
+  options = []
+  if not writable:
+    options = ["-r"]
+
+  return [_BTRFS, "subvolume", "snapshot"] + options + [source, destination]
 
 
 def sync(filesystem):

@@ -61,3 +61,13 @@ operation.
 
 $ btrfs-backup --subvolume=subvolume/ snapshots/ backup/ --restore
                --reverse
+
+The above steps for restoration assume that the subvolume you initially
+backed up got deleted. However, under certain circumstances it might be
+the case that you only want to restore the snapshots (the read-only
+subvolumes created below snapshots/ in the example above) as opposed to
+the original subvolume (i.e., subvolume/ above). This behavior can be
+achieved by means of the snapshots-only option, like so:
+
+$ btrfs-backup --restore --snapshots-only
+               --subvolume=subvolume/ backup/ snapshots/

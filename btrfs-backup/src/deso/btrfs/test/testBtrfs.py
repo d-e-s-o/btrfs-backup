@@ -134,6 +134,18 @@ class TestBtrfsSnapshot(BtrfsSnapshotTestCase):
         make(m, "root_snapshot", "file2", data=b"")
 
 
+  def testBtrfsSnapshotCreateWritable(self):
+    """Verify that we can create a writable snapshot."""
+    with alias(self._mount) as m:
+      # Delete the original subvolume.
+      execute(*delete(m.path("root")))
+      # And recreate it from the snapshot.
+      execute(*snapshot(m.path("root_snapshot"), m.path("root"), writable=True))
+      # We must be able to write to the subvolume.
+      make(m, "root", "file2", data=b"test-data")
+      self.assertContains(m.path("root", "file2"), "test-data")
+
+
   def testBtrfsDiffCanUseArbitraryGeneration(self):
     """Verify that we are allowed to pass in an arbitrary generation to diff()."""
     # Because of a supposed bug in btrfs' find-new generation handling

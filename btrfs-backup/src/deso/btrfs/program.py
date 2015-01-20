@@ -35,9 +35,9 @@ class Program:
     self._dst_repo = Repository(dst_repo)
 
 
-  def run(self, restore=False):
+  def run(self, restore=False, snapshots_only=False):
     """Run the program, start the synchronization."""
     if not restore:
       sync(self._subvolumes, self._src_repo, self._dst_repo)
     else:
-      restore_(self._subvolumes, self._src_repo, self._dst_repo)
+      restore_(self._subvolumes, self._src_repo, self._dst_repo, snapshots_only)

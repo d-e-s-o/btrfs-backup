@@ -564,7 +564,7 @@ class TestBtrfsSync(BtrfsTestCase):
       self.assertEqual(src.snapshots(), [])
       self.assertEqual(glob(join(snaps, "*")), [])
 
-      restore([m.path("home", "user")], dst, src)
+      restore([m.path("home", "user")], dst, src, snapshots_only=True)
 
       snap, = src.snapshots()
       file_ = src.path(snap["path"], "test-dir", "test")
@@ -603,7 +603,7 @@ class TestBtrfsSync(BtrfsTestCase):
           # we created a new btrfs device and mounted it (a new
           # temporary directory is used).
           dst = Repository(d.path())
-          restore([subvolume], bak, dst)
+          restore([subvolume], bak, dst, snapshots_only=True)
           snap, = dst.snapshots()
 
           file1 = dst.path(snap["path"], "dir", "test1")
