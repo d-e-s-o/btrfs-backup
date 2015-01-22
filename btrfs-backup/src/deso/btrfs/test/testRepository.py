@@ -613,5 +613,56 @@ class TestBtrfsSync(BtrfsTestCase):
           self.assertContains(file2, "content2")
 
 
+  def testRepositoryPurge(self):
+    """Test auto deletion of old snapshots."""
+    with patch("deso.btrfs.repository.datetime", wraps=datetime) as mock_now:
+      with alias(self._mount) as m:
+        subvolumes = [make(m, "subvol", subvol=True)]
+        src = Repository(make(m, "snapshots"))
+        dst = Repository(make(m, "backup"))
+        now = datetime(2015, 1, 23, 21, 10, 17)
+
+        # Create a lot of snapshots each with a different time stamp.
+        for i in range(20):
+          make(m, "subvol", "file%s" % i, data=b"test")
+          mock_now.now.return_value = now - timedelta(minutes=i)
+          syncRepos(subvolumes, src, dst)
+
+        snapshots = src.snapshots()
+        mock_now.now.return_value = now
+
+        # Nothing should have been deleted for a duration of 1 hour of
+        # keeping the snapshots.
+        src.purge(subvolumes, timedelta(hours=1))
+        self.assertEqual(src.snapshots(), snapshots)
+
+        src.purge(subvolumes, timedelta(minutes=30))
+        self.assertEqual(src.snapshots(), snapshots)
+
+        src.purge(subvolumes, timedelta(minutes=19))
+        self.assertEqual(src.snapshots(), snapshots)
+
+        # Now with a keep duration of just less than 19 minutes we have
+        # our first deletion (the first snapshot we created, to be
+        # precise).
+        src.purge(subvolumes, timedelta(minutes=18, seconds=59))
+        self.assertEqual(src.snapshots(), snapshots[1:])
+
+        src.purge(subvolumes, timedelta(minutes=10))
+        self.assertEqual(src.snapshots(), snapshots[9:])
+
+        src.purge(subvolumes, timedelta(seconds=59))
+        self.assertEqual(src.snapshots(), snapshots[19:])
+
+        # The most recent snapshots must never be purged.
+        most_recent, = snapshots[19:]
+        src.purge(subvolumes, timedelta(seconds=0))
+        self.assertEqual(src.snapshots(), [most_recent])
+
+        mock_now.now.return_value = now + timedelta(hours=12)
+        src.purge(subvolumes, timedelta(minutes=1))
+        self.assertEqual(src.snapshots(), [most_recent])
+
+
 if __name__ == "__main__":
   main()

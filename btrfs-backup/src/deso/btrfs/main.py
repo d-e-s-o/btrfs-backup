@@ -25,8 +25,15 @@ from deso.btrfs.alias import (
 from sys import (
   stderr,
 )
+from re import (
+  compile as regex,
+)
+from datetime import (
+  timedelta,
+)
 from argparse import (
   ArgumentParser,
+  ArgumentTypeError,
 )
 
 
@@ -68,6 +75,28 @@ def run(subvolumes, src_repo, dst_repo, **kwargs):
     return 3
 
 
+def duration(string):
+  """Create a timedelta object from a duration string."""
+  suffixes = {
+    "S": timedelta(seconds=1),
+    "M": timedelta(minutes=1),
+    "H": timedelta(hours=1),
+    "d": timedelta(days=1),
+    "w": timedelta(weeks=1),
+    "m": timedelta(weeks=4),
+    "y": timedelta(weeks=52),
+  }
+
+  for suffix, duration_ in suffixes.items():
+    expression = regex(r"^([1-9][0-9]*){s}$".format(s=suffix))
+    m = expression.match(string)
+    if m:
+      amount, = m.groups()
+      return int(amount) * duration_
+
+  raise ArgumentTypeError("Invalid duration string: \"%s\"." % string)
+
+
 def main(argv):
   """The main function parses the program arguments and reacts on them."""
   parser = ArgumentParser(prog=name(), add_help=False,
@@ -83,6 +112,16 @@ def main(argv):
   parser.add_argument(
     "-h", "--help", action="help",
     help="Show this help message and exit.",
+  )
+  parser.add_argument(
+    "--keep-for", action="store", type=duration, metavar="duration",
+    dest="keep_for",
+    help="Duration how long to keep snapshots. Snapshots that are older "
+         "than \'duration\' will be deleted from the source repository "
+         "when the next backup is performed. A duration is specified by "
+         "an amount (i.e., a number) along with a suffix. Valid "
+         "suffixes are: S (seconds), M (minutes), H (hours), d (days), "
+         "w (weeks), m (months), and y (years).",
   )
   parser.add_argument(
     "-r", "--restore", action="store_true", dest="restore", default=False,
@@ -127,4 +166,5 @@ def main(argv):
       src_repo, dst_repo = ns.src, ns.dst
 
     return run(subvolumes, src_repo, dst_repo, restore=ns.restore,
-               snapshots_only=ns.snapshots_only)
+               snapshots_only=ns.snapshots_only,
+               keep_for=ns.keep_for)

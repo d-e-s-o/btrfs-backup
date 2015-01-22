@@ -19,6 +19,13 @@
 
 """Test the progam's main functionality."""
 
+from argparse import (
+  ArgumentTypeError,
+)
+from datetime import (
+  datetime,
+  timedelta,
+)
 from deso.btrfs.alias import (
   alias,
 )
@@ -26,6 +33,7 @@ from deso.btrfs.command import (
   delete,
 )
 from deso.btrfs.main import (
+  duration,
   main as btrfsMain,
 )
 from deso.btrfs.test.btrfsTest import (
@@ -49,10 +57,76 @@ from sys import (
 from unittest import (
   main,
 )
+from unittest.mock import (
+  patch,
+)
 
 
 class TestMain(BtrfsTestCase):
   """A test case for testing of the progam's main functionality."""
+  def testDurationParsingSuccess(self):
+    """Test duration parsing with some examples that must succeed."""
+    self.assertEqual(duration("20S"), timedelta(seconds=20))
+    self.assertEqual(duration("1M"), timedelta(minutes=1))
+    self.assertEqual(duration("56H"), timedelta(hours=56))
+    self.assertEqual(duration("1d"), timedelta(hours=24))
+    self.assertEqual(duration("5w"), timedelta(days=35))
+    self.assertEqual(duration("13m"), timedelta(weeks=13*4))
+    self.assertEqual(duration("8y"), timedelta(weeks=8*52))
+
+
+  def testDurationParsingFailure(self):
+    """Test duration parsing with some examples that must fail."""
+    fails = ["", "x", "10u", "S5", "abc", "1y1", "13m_"]
+
+    for fail in fails:
+      with self.assertRaises(ArgumentTypeError):
+        duration(fail)
+
+
+  def testKeepFor(self):
+    """Verify that using the --keep-for option old snapshots get deleted."""
+    with patch("deso.btrfs.repository.datetime", wraps=datetime) as mock_now:
+      with alias(self._mount) as m:
+        make(m, "subvol", subvol=True)
+        make(m, "snapshots")
+        make(m, "backup")
+
+        now = datetime.now()
+        mock_now.now.return_value = now
+
+        args = "--subvolume {subvol} {src} {dst}"
+        args = args.format(subvol=m.path("subvol"),
+                           src=m.path("snapshots"),
+                           dst=m.path("backup"))
+        result = btrfsMain([argv[0]] + args.split())
+        self.assertEqual(result, 0)
+        self.assertEqual(len(glob(m.path("snapshots", "*"))), 1)
+
+        # We need a second snapshot, taken at a later time.
+        mock_now.now.return_value = now + timedelta(minutes=1)
+        make(m, "subvol", "file1", data=b"data")
+
+        result = btrfsMain([argv[0]] + args.split())
+        self.assertEqual(result, 0)
+        self.assertEqual(len(glob(m.path("snapshots", "*"))), 2)
+
+        # Now for the purging.
+        mock_now.now.return_value = now + timedelta(hours=7, seconds=1)
+
+        # With a keep duration of one day the snapshots must stay.
+        args1 = args + " --keep-for=1d"
+        result = btrfsMain([argv[0]] + args1.split())
+        self.assertEqual(result, 0)
+        self.assertEqual(len(glob(m.path("snapshots", "*"))), 2)
+
+        # With a duration of 7 hours one must go.
+        args1 = args + " --keep-for=7H"
+        result = btrfsMain([argv[0]] + args1.split())
+        self.assertEqual(result, 0)
+        self.assertEqual(len(glob(m.path("snapshots", "*"))), 1)
+
+
   def testRun(self):
     """Test a simple run of the program with two subvolumes."""
     def wipeSubvolumes(path, pattern="*"):

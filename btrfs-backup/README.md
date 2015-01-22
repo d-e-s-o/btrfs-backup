@@ -46,6 +46,21 @@ $ btrfs-backup --subvolume=subvolume/ snapshots/ backup/
 The -s/--subvolume option can be supplied multiple times in order to
 perform a backup of multiple subvolumes.
 
+Along with a backup old snapshots can also be deleted in an automated
+fashion. The --keep-for option can be given and a duration specified
+that defines the duration after which old snapshots are deleted. An
+example invocation looks like this:
+
+$ btrfs-backup --keep-for=1d --subvolume=subvolume/ snapshots/ backup/
+
+Using the above command, all snapshots older than one day will be purged
+from the snapshots/ repository (the backup/ repository is left
+untouched). Supported duration units are: seconds (S), minutes (M),
+hours (H), days (d), weeks (w), months (m), and years (y).
+
+Note that as a safety measure, the most recent snapshot cannot be
+deleted using this option.
+
 ### Restore
 To restore the latest snapshot for the given subvolume from the backup,
 the following command can be used:

@@ -32,6 +32,7 @@ from deso.btrfs.alias import (
   alias,
 )
 from deso.btrfs.command import (
+  delete,
   deserialize,
   diff,
   show,
@@ -466,6 +467,30 @@ def _diff(snapshot, subvolume):
   return [_parseDiffLine(line) for line in output]
 
 
+def _purge(subvolume, repository, duration, snapshots):
+  """Remove unused snapshots from a repository."""
+  # Store the time we work with so that it does not change.
+  now = datetime.now()
+  base = _snapshotBaseName(subvolume)
+  snapshots = _findSnapshotsForSubvolume(snapshots, subvolume)
+
+  # The list of snapshots is sorted in ascending order, that is, the
+  # oldest snapshots will be at the beginning. Note that we exclude the
+  # most recent snapshot, i.e., the last one in the list. It should
+  # never be deleted.
+  for snapshot in snapshots[:-1]:
+    snapshot = snapshot["path"]
+    # The string is comprised of the base name, the separator '-', as
+    # well as the time stamp. Remove all but the time stamp.
+    string = snapshot[len(base)+1:]
+
+    # Parse the time stamp into a datetime value and check whether it is
+    # old enough so that the snapshot should be deleted.
+    time = datetime.strptime(string, _TIME_FORMAT)
+    if time + duration < now:
+      execute(*delete(repository.path(snapshot)))
+
+
 def _trail(path):
   """Ensure the path has a trailing separator."""
   return join(path, "")
@@ -519,6 +544,22 @@ class Repository:
       #       the outside. Such a change might require some adjustments,
       #       however, and it is unclear whether it is worth the effort.
       return snapshots
+
+
+  def purge(self, subvolumes, duration):
+    """Remove unused snapshots from the repository."""
+    # Note that we cache the snapshots here. This will cause problems if
+    # the same subvolume is passed in multiple times in which case we
+    # might try to remove an associated snapshot multiple times as well,
+    # which is destined to fail. However, this is clearly wrong usage.
+    # TODO: Strictly speaking the best place for purging existing
+    #       snapshots is from the sync() function. When in this function
+    #       we have already queried all snapshots and can work with them
+    #       instead of gathering a new list here.
+    snapshots = self.snapshots()
+
+    for subvolume in subvolumes:
+      _purge(subvolume, self, duration, snapshots)
 
 
   def diff(self, snapshot, subvolume):
