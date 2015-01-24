@@ -52,6 +52,7 @@ from os import (
 from os.path import (
   abspath,
   dirname,
+  isdir,
   join,
   realpath,
 )
@@ -410,6 +411,8 @@ def sync(subvolumes, src, dst):
 def _restore(subvolume, src, dst, snapshots, snapshots_only):
   """Restore a snapshot/subvolume by transferal from another repository."""
   snapshot = _findMostRecent(snapshots, subvolume)
+  subvolume = realpath(subvolume)
+
   # In case the given source repository does not contain any snapshots
   # for the given subvolume we cannot do anything but signal that to
   # the user.
@@ -418,7 +421,17 @@ def _restore(subvolume, src, dst, snapshots, snapshots_only):
     error = error.format(s=subvolume, r=src.path())
     raise FileNotFoundError(error)
 
-  subvolume = realpath(subvolume)
+  # We want to signal an error to the user in case the subvolume already
+  # exists but he/she has asked us to restore it. We cannot solely rely
+  # on btrfs snapshot for this detection because in case there is a
+  # directory where 'subvolume' points to, the command will just
+  # manifest the new subvolume in this directory. So explicitly guard
+  # against this case here.
+  if not snapshots_only and isdir(subvolume):
+    error = "Cannot restore subvolume \"{s}\": a directory with this name exists."
+    error = error.format(s=subvolume)
+    raise FileExistsError(error)
+
   snapshot = snapshot["path"]
 
   # Restoration of a subvolume involves a subset of the steps we do

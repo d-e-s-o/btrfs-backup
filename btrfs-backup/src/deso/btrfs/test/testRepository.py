@@ -613,6 +613,34 @@ class TestBtrfsSync(BtrfsTestCase):
           self.assertContains(file2, "content2")
 
 
+  def testRepositoryRestoreFailExists(self):
+    """Verify that restoration fails if the subvolume to restore exists."""
+    with alias(self._mount) as m:
+      make(m, "root", subvol=True)
+      make(m, "root", "file", data=b"data")
+
+      src = Repository(make(m, "snapshots"))
+      bak = Repository(make(m, "backup"))
+
+      syncRepos([m.path("root")], src, bak)
+
+      snap, = src.snapshots()
+      execute(*delete(src.path(snap["path"])))
+
+      regex = r"root.*: a directory.*exists"
+      with self.assertRaisesRegex(FileExistsError, regex):
+        restore([m.path("root")], bak, src)
+
+      # Also test that we fail if the previously existing root subvolume
+      # got replaced by a file.
+      execute(*delete(m.path("root")))
+      make(m, "root", data=b"root")
+
+      regex = r"%s.*exists and it is not a directory" % m.path("root")
+      with self.assertRaisesRegex(ChildProcessError, regex):
+        restore([m.path("root")], bak, src)
+
+
   def testRepositoryPurge(self):
     """Test auto deletion of old snapshots."""
     with patch("deso.btrfs.repository.datetime", wraps=datetime) as mock_now:
