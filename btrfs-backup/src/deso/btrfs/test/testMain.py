@@ -95,7 +95,7 @@ class TestMain(BtrfsTestCase):
         now = datetime.now()
         mock_now.now.return_value = now
 
-        args = "--subvolume {subvol} {src} {dst}"
+        args = "backup --subvolume {subvol} {src} {dst}"
         args = args.format(subvol=m.path("subvol"),
                            src=m.path("snapshots"),
                            dst=m.path("backup"))
@@ -138,9 +138,10 @@ class TestMain(BtrfsTestCase):
 
       self.assertEqual(glob(join(path, pattern)), [])
 
-    def run(src, dst, *options):
+    def run(command, src, dst, *options):
       """Run the program to work on two subvolumes."""
       args = [
+        command,
         "-s", m.path("home", "user"),
         "--subvolume=%s" % m.path("root"),
         src, dst
@@ -150,7 +151,7 @@ class TestMain(BtrfsTestCase):
 
     def backup():
       """Invoke the program to backup snapshots/subvolumes."""
-      run(m.path("snapshots"), b.path("backup"))
+      run("backup", m.path("snapshots"), b.path("backup"))
 
     def restore(*options, reverse=False):
       """Invoke the program to restore snapshots/subvolumes."""
@@ -161,7 +162,7 @@ class TestMain(BtrfsTestCase):
         src = m.path("snapshots")
         dst = b.path("backup")
 
-      run(src, dst, "--restore", *options)
+      run("restore", src, dst, *options)
 
     with alias(self._mount) as m:
       # We backup our data to a different btrfs volume.

@@ -41,7 +41,7 @@ subvolume to backup.
 ### Backup
 In order to create a backup, use the following command:
 
-$ btrfs-backup --subvolume=subvolume/ snapshots/ backup/
+$ btrfs-backup backup --subvolume=subvolume/ snapshots/ backup/
 
 The -s/--subvolume option can be supplied multiple times in order to
 perform a backup of multiple subvolumes.
@@ -51,7 +51,8 @@ fashion. The --keep-for option can be given and a duration specified
 that defines the duration after which old snapshots are deleted. An
 example invocation looks like this:
 
-$ btrfs-backup --keep-for=1d --subvolume=subvolume/ snapshots/ backup/
+$ btrfs-backup backup --keep-for=1d
+                      --subvolume=subvolume/ snapshots/ backup/
 
 Using the above command, all snapshots older than one day will be purged
 from the snapshots/ repository (the backup/ repository is left
@@ -65,17 +66,17 @@ deleted using this option.
 To restore the latest snapshot for the given subvolume from the backup,
 the following command can be used:
 
-$ btrfs-backup --restore --subvolume=subvolume/ backup/ snapshots/
+$ btrfs-backup restore --subvolume=subvolume/ backup/ snapshots/
 
 Alternatively, you can use the --reverse option to keep the order of the
 source and destination repository that was used during backup (as
 opposed to restoration). This option exists for convenience only, so
-that not the entire command line has to be amended but rather two
-options can be appended to convert a backup operation into a restore
-operation.
+that not the entire command line has to be amended but only one word
+replaced and an option appended to convert a backup operation into a
+restore operation.
 
-$ btrfs-backup --subvolume=subvolume/ snapshots/ backup/ --restore
-               --reverse
+$ btrfs-backup restore --reverse
+                       --subvolume=subvolume/ snapshots/ backup/
 
 The above steps for restoration assume that the subvolume you initially
 backed up got deleted. However, under certain circumstances it might be
@@ -84,5 +85,5 @@ subvolumes created below snapshots/ in the example above) as opposed to
 the original subvolume (i.e., subvolume/ above). This behavior can be
 achieved by means of the snapshots-only option, like so:
 
-$ btrfs-backup --restore --snapshots-only
-               --subvolume=subvolume/ backup/ snapshots/
+$ btrfs-backup restore --snapshots-only
+                       --subvolume=subvolume/ backup/ snapshots/

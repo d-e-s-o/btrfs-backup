@@ -52,7 +52,7 @@ def version():
   return "0.1"
 
 
-def run(subvolumes, src_repo, dst_repo, **kwargs):
+def run(method, subvolumes, src_repo, dst_repo, **kwargs):
   """Start actual execution."""
   try:
     # This import pulls in all required modules and we check for
@@ -65,7 +65,7 @@ def run(subvolumes, src_repo, dst_repo, **kwargs):
 
   try:
     program = Program(subvolumes, src_repo, dst_repo)
-    program.run(**kwargs)
+    method(program)(**kwargs)
     return 0
   except ChildProcessError as e:
     print("Execution failure:\n\"%s\"" % e, file=stderr)
@@ -97,10 +97,28 @@ def duration(string):
   raise ArgumentTypeError("Invalid duration string: \"%s\"." % string)
 
 
-def main(argv):
-  """The main function parses the program arguments and reacts on them."""
-  parser = ArgumentParser(prog=name(), add_help=False,
-                          description="%s -- %s" % (name(), description()))
+def addStandardArgs(parser):
+  """Add the standard arguments --version and --help to an argument parser."""
+  parser.add_argument(
+    "-h", "--help", action="help",
+    help="Show this help message and exit.",
+  )
+  parser.add_argument(
+    "--version", action="version", version="%s %s" % (name(), version()),
+    help="Show the program\'s version and exit.",
+  )
+
+
+def addOptionalArgs(parser):
+  """Add the optional --reverse argument to a parser."""
+  parser.add_argument(
+    "--reverse", action="store_true", dest="reverse", default=False,
+    help="Reverse (i.e., swap) the source and destination repositories.",
+  )
+
+
+def addRequiredArgs(parser):
+  """Add the various required arguments to a parser."""
   parser.add_argument(
     "src", action="store", metavar="source-repo",
     help="The path to the source repository.",
@@ -110,10 +128,25 @@ def main(argv):
     help="The path to the destination repository.",
   )
   parser.add_argument(
-    "-h", "--help", action="help",
-    help="Show this help message and exit.",
+    "-s", "--subvolume", action="append", metavar="subvolume", nargs=1,
+    dest="subvolumes", required=True,
+    help="Path to a subvolume to include in the backup. Can be supplied "
+         "multiple times to include more than one subvolume.",
   )
-  parser.add_argument(
+
+
+def addBackupParser(parser):
+  """Add a parser for the backup command to another parser."""
+  backup = parser.add_parser(
+    "backup", add_help=False,
+    help="Backup one or more subvolumes.",
+  )
+
+  required = backup.add_argument_group("Required arguments")
+  addRequiredArgs(required)
+
+  optional = backup.add_argument_group("Optional arguments")
+  optional.add_argument(
     "--keep-for", action="store", type=duration, metavar="duration",
     dest="keep_for",
     help="Duration how long to keep snapshots. Snapshots that are older "
@@ -123,33 +156,46 @@ def main(argv):
          "suffixes are: S (seconds), M (minutes), H (hours), d (days), "
          "w (weeks), m (months), and y (years).",
   )
-  parser.add_argument(
-    "-r", "--restore", action="store_true", dest="restore", default=False,
-    help="Restore from a backup repository rather than saving to it. "
-         "This option triggers the opposite behavior to what is done by "
-         "default.",
+  addOptionalArgs(optional)
+  addStandardArgs(optional)
+
+
+def addRestoreParser(parser):
+  """Add a parser for the restore command to another parser."""
+  restore = parser.add_parser(
+    "restore", add_help=False,
+    help="Restore subvolumes or snapshots from a repository.",
   )
-  parser.add_argument(
-    "--reverse", action="store_true", dest="reverse", default=False,
-    help="Reverse (i.e., swap) the source and destination repositories.",
-  )
-  parser.add_argument(
-    "-s", "--subvolume", action="append", metavar="subvolume", nargs=1,
-    dest="subvolumes", required=True,
-    help="Path to a subvolume to include in the backup. Can be supplied "
-         "multiple times to include more than one subvolume.",
-  )
-  parser.add_argument(
+
+  required = restore.add_argument_group("Required arguments")
+  addRequiredArgs(required)
+
+  optional = restore.add_argument_group("Optional arguments")
+  optional.add_argument(
     "--snapshots-only", action="store_true", dest="snapshots_only",
     default=False,
-    help="Restore only snapshots, not the entire source subvolume. "
-         "Valid only in restoration mode, i.e., together with "
-         "-r/--restore.",
+    help="Restore only snapshots, not the entire source subvolume."
   )
-  parser.add_argument(
-    "--version", action="version", version="%s %s" % (name(), version()),
-    help="Show the program\'s version and exit.",
+  addOptionalArgs(optional)
+  addStandardArgs(optional)
+
+
+def main(argv):
+  """The main function parses the program arguments and reacts on them."""
+  # TODO: One remaining ugliness is the lowercase 'usage:' when
+  #       displaying the help text. Find a way to fix this issue.
+  parser = ArgumentParser(prog=name(), add_help=False,
+                          description="%s -- %s" % (name(), description()))
+  subparsers = parser.add_subparsers(
+    title="Subcommands", metavar="command", dest="command",
+    help="A command to perform.",
   )
+  subparsers.required = True
+  optional = parser.add_argument_group("Optional arguments")
+  addStandardArgs(optional)
+
+  addBackupParser(subparsers)
+  addRestoreParser(subparsers)
 
   # Note that argv contains the path to the program as the first element
   # which we kindly ignore.
@@ -165,6 +211,11 @@ def main(argv):
     else:
       src_repo, dst_repo = ns.src, ns.dst
 
-    return run(subvolumes, src_repo, dst_repo, restore=ns.restore,
-               snapshots_only=ns.snapshots_only,
-               keep_for=ns.keep_for)
+    if ns.command == "backup":
+      return run(lambda x: x.backup, subvolumes, src_repo, dst_repo,
+                 keep_for=ns.keep_for)
+    elif ns.command == "restore":
+      return run(lambda x: x.restore, subvolumes, src_repo, dst_repo,
+                 snapshots_only=ns.snapshots_only)
+    else:
+      assert False

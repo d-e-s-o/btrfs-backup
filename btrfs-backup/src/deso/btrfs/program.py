@@ -35,11 +35,13 @@ class Program:
     self._dst_repo = Repository(dst_repo)
 
 
-  def run(self, restore=False, snapshots_only=False, keep_for=None):
-    """Run the program, start the synchronization."""
-    if not restore:
-      sync(self._subvolumes, self._src_repo, self._dst_repo)
-      if keep_for:
-        self._src_repo.purge(self._subvolumes, keep_for)
-    else:
-      restore_(self._subvolumes, self._src_repo, self._dst_repo, snapshots_only)
+  def backup(self, keep_for=None):
+    """Backup subvolumes to a repository."""
+    sync(self._subvolumes, self._src_repo, self._dst_repo)
+    if keep_for:
+      self._src_repo.purge(self._subvolumes, keep_for)
+
+
+  def restore(self, snapshots_only=False):
+    """Restore subvolumes or snapshots from a repository."""
+    restore_(self._subvolumes, self._src_repo, self._dst_repo, snapshots_only)
