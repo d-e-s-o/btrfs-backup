@@ -23,6 +23,7 @@ from deso.btrfs.alias import (
   alias,
 )
 from sys import (
+  argv as sysargv,
   stderr,
 )
 from re import (
@@ -34,6 +35,7 @@ from datetime import (
 from argparse import (
   ArgumentParser,
   ArgumentTypeError,
+  HelpFormatter,
 )
 
 
@@ -138,7 +140,7 @@ def addRequiredArgs(parser):
 def addBackupParser(parser):
   """Add a parser for the backup command to another parser."""
   backup = parser.add_parser(
-    "backup", add_help=False,
+    "backup", add_help=False, formatter_class=SubLevelHelpFormatter,
     help="Backup one or more subvolumes.",
   )
 
@@ -163,7 +165,7 @@ def addBackupParser(parser):
 def addRestoreParser(parser):
   """Add a parser for the restore command to another parser."""
   restore = parser.add_parser(
-    "restore", add_help=False,
+    "restore", add_help=False, formatter_class=SubLevelHelpFormatter,
     help="Restore subvolumes or snapshots from a repository.",
   )
 
@@ -180,12 +182,32 @@ def addRestoreParser(parser):
   addStandardArgs(optional)
 
 
+class TopLevelHelpFormatter(HelpFormatter):
+  """A help formatter class for a top level parser."""
+  def add_usage(self, usage, actions, groups, prefix=None):
+    """Add usage information, overwrite the default prefix."""
+    # Control flow is tricky here. Our invocation *might* come from the
+    # sub-level parser or we might have been invoked directly. In the
+    # latter case use our own prefix, otherwise just pass through the
+    # given one.
+    if prefix is None:
+      prefix = "Usage: "
+
+    super().add_usage(usage, actions, groups, prefix)
+
+
+class SubLevelHelpFormatter(HelpFormatter):
+  """A help formatter class for a sub level parser."""
+  def add_usage(self, usage, actions, groups, prefix=None):
+    """Add usage information, overwrite the default prefix."""
+    super().add_usage(usage, actions, groups, "Usage: ")
+
+
 def main(argv):
   """The main function parses the program arguments and reacts on them."""
-  # TODO: One remaining ugliness is the lowercase 'usage:' when
-  #       displaying the help text. Find a way to fix this issue.
   parser = ArgumentParser(prog=name(), add_help=False,
-                          description="%s -- %s" % (name(), description()))
+                          description="%s -- %s" % (name(), description()),
+                          formatter_class=TopLevelHelpFormatter)
   subparsers = parser.add_subparsers(
     title="Subcommands", metavar="command", dest="command",
     help="A command to perform.",
@@ -219,3 +241,7 @@ def main(argv):
                  snapshots_only=ns.snapshots_only)
     else:
       assert False
+
+
+if __name__ == "__main__":
+  exit(main(sysargv))

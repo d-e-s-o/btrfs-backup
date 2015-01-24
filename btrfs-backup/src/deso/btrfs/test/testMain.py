@@ -53,6 +53,7 @@ from glob import (
 )
 from sys import (
   argv,
+  executable,
 )
 from unittest import (
   main,
@@ -82,6 +83,52 @@ class TestMain(BtrfsTestCase):
     for fail in fails:
       with self.assertRaises(ArgumentTypeError):
         duration(fail)
+
+
+  def testUsage(self):
+    """Verify that the help contains an uppercase 'Usage:' string."""
+    def runMain(*args):
+      """Run the program and read the output it produces."""
+      stdout, _ = execute(executable, "-m", "deso.btrfs.main", *args, read_out=True)
+      stdout = stdout.decode("utf-8")
+      return stdout
+
+    stdout = runMain("--help")
+    self.assertRegex(stdout, "^Usage:")
+
+    stdout = runMain("backup", "--help")
+    self.assertRegex(stdout, "^Usage:")
+
+    stdout = runMain("restore", "--help")
+    self.assertRegex(stdout, "^Usage:")
+
+
+  def testUsageError(self):
+    """Verify that the help contains an uppercase 'Usage:' string in case of wrong usage."""
+    def runMain(*args):
+      """Run the program."""
+      execute(executable, "-m", "deso.btrfs.main", *args)
+
+    def runAndTest(*args):
+      """Run the program with the given arguments and verify there is only one Usage: string."""
+      try:
+        runMain(*args)
+        # The command should fail due to missing arguments.
+        self.assertFalse(True)
+      except ChildProcessError as e:
+        string = str(e)
+
+      self.assertRegex(string, "Usage:")
+      self.assertNotRegex(string, "usage:")
+      # Remove the usage string. There should not be a second one (we
+      # had a couple of problems with two usage strings being prepended
+      # to the actual line of text, hence this test).
+      string = string.replace("Usage", "", 1)
+      self.assertNotRegex(string, "Usage:")
+
+    runAndTest()
+    runAndTest("backup")
+    runAndTest("restore")
 
 
   def testKeepFor(self):
