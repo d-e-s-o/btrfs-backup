@@ -38,7 +38,6 @@ from deso.btrfs.repository import (
   Repository,
   restore,
   _findCommonSnapshots,
-  _findRoot,
   _snapshots,
   sync as syncRepos,
 )
@@ -92,21 +91,22 @@ class TestRepositoryBase(BtrfsTestCase):
   def testRepositorySubvolumeFindRootOnRoot(self):
     """Test retrieval of the absolute path of the btrfs root from the root."""
     with alias(self._mount) as m:
-      self.assertEqual(_findRoot(m.path()), m.path())
+      repo = Repository(m.path())
+      self.assertEqual(repo.root, m.path())
 
 
   def testRepositorySubvolumeFindRootFromBelowRoot(self):
     """Test retrieval of the absolute path of the btrfs root from a sub-directory."""
     with alias(self._mount) as m:
-      directory = make(m, "dir")
-      self.assertEqual(_findRoot(directory), m.path())
+      repo = Repository(make(m, "dir"))
+      self.assertEqual(repo.root, m.path())
 
 
   def testRepositorySubvolumeFindRootFromSubvolume(self):
     """Test retrieval of the absolute path of the btrfs root from a true subvolume."""
     with alias(self._mount) as m:
-      root = make(m, "root", subvol=True)
-      self.assertEqual(_findRoot(root), m.path())
+      repo = Repository(make(m, "root", subvol=True))
+      self.assertEqual(repo.root, m.path())
 
 
   def testRepositoryFindCommonSnapshots(self):
@@ -217,13 +217,14 @@ class TestRepositorySnapshots(BtrfsSnapshotTestCase):
     with alias(self._mount) as m:
       # Create a new sub-directory where no snapshots are present.
       directory = make(m, "dir")
+      repository = Repository(directory)
       # TODO: The assertion should really be assertEqual! I consider
       #       this behavior a bug because we pass in the -o option to
       #       the list command which is promoted as: "print only
       #       subvolumes below specified path".
       #       There is no subvolume below the given path, so reporting a
       #       snapshot here is wrong.
-      self.assertNotEqual(_snapshots(directory), [])
+      self.assertNotEqual(_snapshots(repository), [])
 
 
   def testRepositoryListOnlySnapshotsInRepository(self):

@@ -54,7 +54,7 @@ def version():
   return "0.1"
 
 
-def run(method, subvolumes, src_repo, dst_repo, **kwargs):
+def run(method, subvolumes, src_repo, dst_repo, remote_cmd=None, **kwargs):
   """Start actual execution."""
   try:
     # This import pulls in all required modules and we check for
@@ -65,8 +65,14 @@ def run(method, subvolumes, src_repo, dst_repo, **kwargs):
     print("A command was not found:\n\"%s\"" % e, file=stderr)
     return 1
 
+  if remote_cmd:
+    # TODO: Right now we do not support remote commands that contain
+    #       spaces in their path. E.g., "/bin/connect to server" would
+    #       not be a valid command.
+    remote_cmd = remote_cmd.split()
+
   try:
-    program = Program(subvolumes, src_repo, dst_repo)
+    program = Program(subvolumes, src_repo, dst_repo, remote_cmd)
     method(program)(**kwargs)
     return 0
   except ChildProcessError as e:
@@ -112,7 +118,13 @@ def addStandardArgs(parser):
 
 
 def addOptionalArgs(parser):
-  """Add the optional --reverse argument to a parser."""
+  """Add the optional arguments to a parser."""
+  parser.add_argument(
+    "--remote-cmd", action="store", dest="remote_cmd", metavar="command",
+    help="The command to use for running btrfs on a remote site. Needs "
+         "to include the full path to the binary or script, e.g., "
+         "\"/usr/bin/ssh server\".",
+  )
   parser.add_argument(
     "--reverse", action="store_true", dest="reverse", default=False,
     help="Reverse (i.e., swap) the source and destination repositories.",
@@ -235,9 +247,11 @@ def main(argv):
 
     if ns.command == "backup":
       return run(lambda x: x.backup, subvolumes, src_repo, dst_repo,
+                 remote_cmd=ns.remote_cmd,
                  keep_for=ns.keep_for)
     elif ns.command == "restore":
       return run(lambda x: x.restore, subvolumes, src_repo, dst_repo,
+                 remote_cmd=ns.remote_cmd,
                  snapshots_only=ns.snapshots_only)
     else:
       assert False

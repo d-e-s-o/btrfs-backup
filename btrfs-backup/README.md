@@ -87,3 +87,25 @@ achieved by means of the snapshots-only option, like so:
 
 $ btrfs-backup restore --snapshots-only
                        --subvolume=subvolume/ backup/ snapshots/
+
+### Remote Execution
+In many cases it is a requirement to backup a subvolume to a remote host
+(or restore a subvolume from it). Mounting a remote btrfs file system
+locally by means of, for instance, sshfs will not provide the ability to
+use btrfs specific tools on it.
+To that end, commands can be run on the remote host directly (provided
+it offers an interface for command execution from the outside and that
+is has the required btrfs tool suite installed). A typical example for
+remote command execution is SSH. Using btrfs-backup on a remote host by
+means of an SSH connection can be achieved with the --remote-cmd option:
+
+$ btrfs-backup backup --remote-cmd='/usr/bin/ssh server'
+                      --subvolume=subvolume/ snapshots/ backup/
+
+In this example, we assume that by invoking '/usr/bin/ssh server'
+locally we can establish a connection to the remote server. The command
+specified using the --remote-cmd option has to be given with the full
+path. Furthermore, this command must accept the command to execute
+remotely (that is, on the host named 'server' in our example above) as
+its arguments. Note that backup/ in this case does not refer to a local
+folder but rather one on the remote side.

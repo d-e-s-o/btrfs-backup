@@ -44,6 +44,7 @@ from deso.btrfs.test.btrfsTest import (
 )
 from deso.execute import (
   execute,
+  pipeline,
 )
 from os.path import (
   join,
@@ -172,6 +173,66 @@ class TestMain(BtrfsTestCase):
         result = btrfsMain([argv[0]] + args1.split())
         self.assertEqual(result, 0)
         self.assertEqual(len(glob(m.path("snapshots", "*"))), 1)
+
+
+  def testRemoteCommand(self):
+    """Verify that the remote command correctly prefixes some btrfs commands."""
+    remote_cmd = "/usr/bin/ssh server"
+
+    def isRemote(command):
+      """Check if a command is a remote command."""
+      return " ".join(command).startswith(remote_cmd)
+
+    def filterCommand(command):
+      """Filter all remote command parts from a command (if any)."""
+      # Since we do not have an SSH server running (and do not want to),
+      # filter out the remote command part before execution.
+      if isRemote(command):
+        command = command[2:]
+
+      return command
+
+    def filterCommands(commands):
+      """Filter all remote command parts from a command list (if any)."""
+      return [filterCommand(cmd) for cmd in commands]
+
+    def executeWrapper(*args, **kwargs):
+      """Wrapper around the execute function that stores the commands it executed."""
+      command = list(args)
+      all_commands.append(command)
+      command = filterCommand(command)
+
+      return execute(*command, **kwargs)
+
+    def pipelineWrapper(commands, *args, **kwargs):
+      """Wrapper around the pipeline function that stores the commands it executed."""
+      for command in commands:
+        all_commands.append(command)
+
+      commands = filterCommands(commands)
+      return pipeline(commands, *args, **kwargs)
+
+    all_commands = []
+    with patch("deso.btrfs.repository.execute", wraps=executeWrapper),\
+         patch("deso.btrfs.repository.pipeline", wraps=pipelineWrapper):
+      with alias(self._mount) as m:
+        make(m, "subvol", subvol=True)
+        make(m, "snapshots")
+        make(m, "backup")
+
+        remote = "--remote-cmd=%s" % remote_cmd
+        args = "backup --subvolume {subvol} {src} {dst}"
+        args = args.format(subvol=m.path("subvol"),
+                           src=m.path("snapshots"),
+                           dst=m.path("backup"))
+        result = btrfsMain([argv[0]] + args.split() + [remote])
+        self.assertEqual(result, 0)
+
+    # We do not check all commands here. However, we know for sure that
+    # btrfs receive should be run on the remote side. So check that it
+    # is properly prefixed.
+    receive, = list(filter(lambda x: "receive" in x, all_commands))
+    self.assertTrue(isRemote(receive), receive)
 
 
   def testRun(self):

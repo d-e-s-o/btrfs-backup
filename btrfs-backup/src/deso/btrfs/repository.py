@@ -125,8 +125,8 @@ def _parseDiffLine(line):
   return path
 
 
-def _snapshots(directory):
-  """Retrieve a list of snapshots in a directory.
+def _snapshots(repository):
+  """Retrieve a list of snapshots in a repository.
 
     Note:
       Because of a supposed bug in btrfs' handling of passed in
@@ -136,7 +136,8 @@ def _snapshots(directory):
       usage of this function is discouraged. Use the Repository's
       snapshots() method instead.
   """
-  output, _ = execute(*listSnapshots(directory), read_out=True)
+  cmd = repository.command(listSnapshots, repository.path())
+  output, _ = execute(*cmd, read_out=True)
   # We might retrieve an empty output if no snapshots were present. In
   # this case, just return early here.
   if not output:
@@ -148,9 +149,10 @@ def _snapshots(directory):
   return [_parseListLine(line) for line in output]
 
 
-def _isRoot(directory):
+def _isRoot(directory, repository):
   """Check if a given directory represents the root of a btrfs file system."""
-  output, _ = execute(*show(directory), read_out=True)
+  cmd = repository.command(show, directory)
+  output, _ = execute(*cmd, read_out=True)
   output = output.decode("utf-8")[:-1].split("\n")
 
   # The output of show() contains multiple lines in case the given
@@ -161,7 +163,7 @@ def _isRoot(directory):
   return len(output) == 1 and output[0].endswith(_SHOW_IS_ROOT)
 
 
-def _findRoot(directory):
+def _findRoot(directory, repository):
   """Find the root of the btrfs file system containing the given directory."""
   assert directory
   assert directory == abspath(directory)
@@ -170,7 +172,7 @@ def _findRoot(directory):
   # or later because of a dirname invocation. However, the show command
   # in _isRoot will fail for an empty directory (a case that will also
   # be hit if this function is run on a non-btrfs file system).
-  while not _isRoot(directory):
+  while not _isRoot(directory, repository):
     new_directory = dirname(directory)
 
     # Executing a dirname on the root directory ('/') just returns the
@@ -303,8 +305,9 @@ def _findCommonSnapshots(src_snaps, dst_snaps):
 def _createSnapshot(subvolume, repository, snapshots):
   """Create a snapshot of the given subvolume in the given repository."""
   name = _snapshotName(subvolume, snapshots)
+  cmd = repository.command(mkSnapshot, subvolume, repository.path(name))
 
-  execute(*mkSnapshot(subvolume, repository.path(name)))
+  execute(*cmd)
   return name
 
 
@@ -315,7 +318,7 @@ def _findOrCreate(subvolume, repository, snapshots):
   # If we found no snapshot or if files are changed between the current
   # state of the subvolume and the most recent snapshot we just found
   # then create a new snapshot.
-  if not snapshot or _diff(snapshot, subvolume):
+  if not snapshot or _diff(snapshot, subvolume, repository):
     old = snapshot["path"] if snapshot else None
     new = _createSnapshot(subvolume, repository, snapshots)
     return new, old
@@ -356,12 +359,12 @@ def _deploy(snapshot, parent, src, dst, src_snaps, subvolume):
 
   # Be sure to have the snapshot persisted to disk before trying to
   # serialize it.
-  execute(*syncFs(src.root))
+  execute(*src.command(syncFs, src.root))
   # Finally transfer the snapshot from the source repository to the
   # destination.
   pipeline([
-    serialize(src.path(snapshot), parents),
-    deserialize(dst.path())
+    src.command(serialize, src.path(snapshot), parents),
+    dst.command(deserialize, dst.path()),
   ])
 
 
@@ -441,7 +444,8 @@ def _restore(subvolume, src, dst, snapshots, snapshots_only):
   # Now that we got the snapshot back on the destination repository,
   # we can restore the actual subvolume from it (if desired).
   if not snapshots_only:
-    execute(*mkSnapshot(dst.path(snapshot), subvolume, writable=True))
+    cmd = dst.command(mkSnapshot, dst.path(snapshot), subvolume, writable=True)
+    execute(*cmd)
 
 
 def restore(subvolumes, src, dst, snapshots_only=False):
@@ -456,7 +460,7 @@ def restore(subvolumes, src, dst, snapshots_only=False):
     _restore(subvolume, src, dst, snapshots, snapshots_only)
 
 
-def _diff(snapshot, subvolume):
+def _diff(snapshot, subvolume, repository):
   """Find the files that changed in a given subvolume with respect to a snapshot."""
   # Because of an apparent bug in btrfs(8) (or a misunderstanding on my
   # side), we cannot use the generation reported for a snapshot to
@@ -470,7 +474,8 @@ def _diff(snapshot, subvolume):
   #       to clarify whether a new snapshot *always* also means a new
   #       generation (I assume so, but it would be best to get
   #       confirmation).
-  output, _ = execute(*diff(subvolume, generation), read_out=True)
+  cmd = repository.command(diff, subvolume, generation)
+  output, _ = execute(*cmd, read_out=True)
   output = output.decode("utf-8")[:-1].split("\n")
   # The diff output usually is ended by a line such as:
   # "transid marker was" followed by a generation ID. We should ignore
@@ -501,7 +506,8 @@ def _purge(subvolume, repository, duration, snapshots):
     # old enough so that the snapshot should be deleted.
     time = datetime.strptime(string, _TIME_FORMAT)
     if time + duration < now:
-      execute(*delete(repository.path(snapshot)))
+      cmd = repository.command(delete, repository.path(snapshot))
+      execute(*cmd)
 
 
 def _trail(path):
@@ -511,18 +517,19 @@ def _trail(path):
 
 class Repository:
   """This class represents a repository for snapshots."""
-  def __init__(self, directory):
+  def __init__(self, directory, remote_cmd=None):
     """Initialize the object and bind it to the given directory."""
     # We always work with absolute paths here.
     directory = abspath(directory)
 
-    self._root = _findRoot(directory)
+    self._remote_cmd = remote_cmd
+    self._root = _findRoot(directory, self)
     self._directory = _trail(directory)
 
 
   def snapshots(self):
     """Retrieve a list of snapshots in this repository."""
-    snapshots = _snapshots(self._directory)
+    snapshots = _snapshots(self)
 
     # We need to work around the btrfs problem that not necessarily all
     # snapshots listed are located in our repository's directory.
@@ -585,12 +592,18 @@ class Repository:
     if not found:
       raise FileNotFoundError("Snapshot not found: \"%s\"" % snapshot)
 
-    return _diff(found, subvolume)
+    return _diff(found, subvolume, self)
 
 
   def path(self, *components):
     """Form an absolute path by combining the given path components."""
     return join(self._directory, *components)
+
+
+  def command(self, function, *args, **kwargs):
+    """Create a command."""
+    command = function(*args, **kwargs)
+    return (self._remote_cmd if self._remote_cmd else []) + command
 
 
   @property
