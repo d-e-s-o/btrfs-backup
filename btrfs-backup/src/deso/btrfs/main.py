@@ -54,7 +54,8 @@ def version():
   return "0.1"
 
 
-def run(method, subvolumes, src_repo, dst_repo, remote_cmd=None, **kwargs):
+def run(method, subvolumes, src_repo, dst_repo, remote_cmd=None,
+        debug=False, **kwargs):
   """Start actual execution."""
   try:
     # This import pulls in all required modules and we check for
@@ -62,6 +63,8 @@ def run(method, subvolumes, src_repo, dst_repo, remote_cmd=None, **kwargs):
     # bail out here.
     from deso.btrfs.program import Program
   except FileNotFoundError as e:
+    if debug:
+      raise
     print("A command was not found:\n\"%s\"" % e, file=stderr)
     return 1
 
@@ -76,9 +79,13 @@ def run(method, subvolumes, src_repo, dst_repo, remote_cmd=None, **kwargs):
     method(program)(**kwargs)
     return 0
   except ChildProcessError as e:
+    if debug:
+      raise
     print("Execution failure:\n\"%s\"" % e, file=stderr)
     return 2
   except Exception as e:
+    if debug:
+      raise
     print("A problem occurred:\n\"%s\"" % e, file=stderr)
     return 3
 
@@ -128,6 +135,11 @@ def addOptionalArgs(parser):
   parser.add_argument(
     "--reverse", action="store_true", dest="reverse", default=False,
     help="Reverse (i.e., swap) the source and destination repositories.",
+  )
+  parser.add_argument(
+    "--debug", action="store_true", dest="debug", default=False,
+    help="Allow for exceptions to escape the program thereby producing "
+         "full backtraces.",
   )
 
 
@@ -248,11 +260,13 @@ def main(argv):
     if ns.command == "backup":
       return run(lambda x: x.backup, subvolumes, src_repo, dst_repo,
                  remote_cmd=ns.remote_cmd,
-                 keep_for=ns.keep_for)
+                 keep_for=ns.keep_for,
+                 debug=ns.debug)
     elif ns.command == "restore":
       return run(lambda x: x.restore, subvolumes, src_repo, dst_repo,
                  remote_cmd=ns.remote_cmd,
-                 snapshots_only=ns.snapshots_only)
+                 snapshots_only=ns.snapshots_only,
+                 debug=ns.debug)
     else:
       assert False
 

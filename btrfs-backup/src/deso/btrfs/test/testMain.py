@@ -42,6 +42,9 @@ from deso.btrfs.test.btrfsTest import (
   make,
   Mount,
 )
+from deso.btrfs.test.util import (
+  TemporaryDirectory,
+)
 from deso.execute import (
   execute,
   pipeline,
@@ -130,6 +133,19 @@ class TestMain(BtrfsTestCase):
     runAndTest()
     runAndTest("backup")
     runAndTest("restore")
+
+
+  def testDebugOption(self):
+    """Verify that using the --debug option an exception leaves the main function."""
+    with TemporaryDirectory() as path:
+      args_base = "backup --subvolume {e} {e} {e} {d}"
+      args = args_base.format(e=join(path, "not-existant"), d="")
+      result = btrfsMain([argv[0]] + args.split())
+      self.assertNotEqual(result, 0)
+
+      args = args_base.format(e=join(path, "not-existant"), d="--debug")
+      with self.assertRaises(ChildProcessError):
+        btrfsMain([argv[0]] + args.split())
 
 
   def testKeepFor(self):

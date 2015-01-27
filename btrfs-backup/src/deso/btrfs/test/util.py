@@ -26,6 +26,7 @@ from tempfile import (
   mkdtemp as mkdtemp_,
   mkstemp as mkstemp_,
   mktemp as mktemp_,
+  TemporaryDirectory as TemporaryDirectory_,
 )
 
 
@@ -45,3 +46,8 @@ def mkdtemp(*args, **kwargs):
 def mkstemp(*args, **kwargs):
   """Wrapper around mkstemp that honors the TEST_TMP_DIR environment variable."""
   return mkstemp_(*args, dir=_getTestDir(), **kwargs)
+
+
+def TemporaryDirectory(*args, **kwargs):
+  """Wrapper around TemporaryDirectory that honors the TEST_TMP_DIR environment variable."""
+  return TemporaryDirectory_(*args, dir=_getTestDir(), **kwargs)
