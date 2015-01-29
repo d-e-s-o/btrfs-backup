@@ -54,8 +54,8 @@ def version():
   return "0.1"
 
 
-def run(method, subvolumes, src_repo, dst_repo, remote_cmd=None,
-        debug=False, **kwargs):
+def run(method, subvolumes, src_repo, dst_repo, read_err=True,
+        remote_cmd=None, debug=False, **kwargs):
   """Start actual execution."""
   try:
     # This import pulls in all required modules and we check for
@@ -75,7 +75,8 @@ def run(method, subvolumes, src_repo, dst_repo, remote_cmd=None,
     remote_cmd = remote_cmd.split()
 
   try:
-    program = Program(subvolumes, src_repo, dst_repo, remote_cmd)
+    program = Program(subvolumes, src_repo, dst_repo, read_err,
+                      remote_cmd)
     method(program)(**kwargs)
     return 0
   except ChildProcessError as e:
@@ -126,6 +127,17 @@ def addStandardArgs(parser):
 
 def addOptionalArgs(parser):
   """Add the optional arguments to a parser."""
+  parser.add_argument(
+    "--no-read-stderr", action="store_false", dest="read_err", default=True,
+    help="Turn off reading of data from stderr. No information about "
+         "the reason for a command failure except for the return code "
+         "will be available. This option is helpful in certain cases "
+         "where a command (likely a remote command) forks a child which "
+         "stays alive longer than the actually run command. In such a "
+         "case if we read the data from stderr we will effectively wait "
+         "for the forked off command to terminate before continuing "
+         "execution.",
+  )
   parser.add_argument(
     "--remote-cmd", action="store", dest="remote_cmd", metavar="command",
     help="The command to use for running btrfs on a remote site. Needs "
@@ -259,11 +271,13 @@ def main(argv):
 
     if ns.command == "backup":
       return run(lambda x: x.backup, subvolumes, src_repo, dst_repo,
+                 read_err=ns.read_err,
                  remote_cmd=ns.remote_cmd,
                  keep_for=ns.keep_for,
                  debug=ns.debug)
     elif ns.command == "restore":
       return run(lambda x: x.restore, subvolumes, src_repo, dst_repo,
+                 read_err=ns.read_err,
                  remote_cmd=ns.remote_cmd,
                  snapshots_only=ns.snapshots_only,
                  debug=ns.debug)

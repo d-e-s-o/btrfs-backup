@@ -251,6 +251,36 @@ class TestMain(BtrfsTestCase):
     self.assertTrue(isRemote(receive), receive)
 
 
+  def testNoStderrRead(self):
+    """Verify that we get not a full error message when --no-read-stderr is used."""
+    # Note that strictly speaking we do not actually test that the
+    # problem for which we introduced the --no-read-stderr option in the
+    # first place is solved. We mainly verify that the option is passed
+    # down and we assume the remaining infrastructure to work as
+    # expected.
+    with patch("deso.btrfs.repository.datetime", wraps=datetime) as mock_now:
+      mock_now.now.return_value = datetime(2015, 1, 29, 20, 59)
+
+      with alias(self._mount) as m:
+        # Note that 'subvol' is actually no subvolume so the backup will
+        # fail at some point.
+        make(m, "subvol")
+        make(m, "snapshots")
+        make(m, "backup")
+
+        args = "backup --debug --no-read-stderr --subvolume {subvol} {src} {dst}"
+        args = args.format(subvol=m.path("subvol"),
+                           src=m.path("snapshots"),
+                           dst=m.path("backup"))
+
+        # When not using --no-read-stderr the time stamp would be
+        # followed by an error string containing the program's stderr
+        # output.
+        regex = r"subvol-2015-01-29_20:59:00$"
+        with self.assertRaisesRegex(ChildProcessError, regex):
+          btrfsMain([argv[0]] + args.split())
+
+
   def testRun(self):
     """Test a simple run of the program with two subvolumes."""
     def wipeSubvolumes(path, pattern="*"):

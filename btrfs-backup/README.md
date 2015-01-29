@@ -109,3 +109,21 @@ path. Furthermore, this command must accept the command to execute
 remotely (that is, on the host named 'server' in our example above) as
 its arguments. Note that backup/ in this case does not refer to a local
 folder but rather one on the remote side.
+
+There are certain cases (an SSH setup with ControlMaster mode enabled
+and ControlPersist option set that establishes a new master connection
+from within btrfs-backup, for instance) where performing a backup takes
+longer than it should or appears to be stalled [1]. In such an event the
+--no-read-stderr option can be useful. It works around this issue with
+the downside of no error message but only exit codes being available in
+the case of command failure.
+
+[1] For the technically interested person: the reason the program
+    appears stalled is because in order to provide reasonable error
+    messages, btrfs-backup reads data from stderr. In the SSH example
+    with ControlPersist set, when SSH is started and creates a new
+    master connection it will fork a second instance into the background
+    that keeps the master connection open. However, because it does not
+    close stderr, btrfs-backup waits until the process terminates, i.e.,
+    the master connection is shut down. For that matter, each SSH
+    command issued exhibits a delay equal to the ControlPersist setting.
