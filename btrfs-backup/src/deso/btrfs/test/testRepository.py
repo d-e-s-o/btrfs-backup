@@ -51,6 +51,7 @@ from deso.btrfs.test.btrfsTest import (
 )
 from deso.execute import (
   execute,
+  findCommand,
 )
 from glob import (
   glob,
@@ -69,6 +70,10 @@ from unittest import (
 from unittest.mock import (
   patch,
 )
+
+
+_GZIP = findCommand("gzip")
+_BZIP = findCommand("bzip2")
 
 
 class TestRepositoryBase(BtrfsTestCase):
@@ -572,46 +577,76 @@ class TestBtrfsSync(BtrfsTestCase):
       self.assertContains(file_, "test-content")
 
 
-  def testRepositoryRestorePlain(self):
+  def testRepositoryRestorePlainWithAndWithoutFilters(self):
     """Test restoration of a snapshot if the destination btrfs volume got wiped."""
-    with alias(self._mount) as b:
-      # This time we create our test harness on the other btrfs device.
-      with BtrfsDevice() as btrfs:
-        with Mount(btrfs.device()) as s:
-          make(s, "home", "user", subvol=True)
-          make(s, "home", "user", "dir", "test1", data=b"content1")
+    def syncAndRestore(send_filters=None, recv_filters=None):
+      """Perform a full sync and restore cycle."""
+      with alias(self._mount) as b:
+        # This time we create our test harness on the other btrfs device.
+        with BtrfsDevice() as btrfs:
+          with Mount(btrfs.device()) as s:
+            make(s, "home", "user", subvol=True)
+            make(s, "home", "user", "dir", "test1", data=b"content1")
 
-          src = Repository(make(s, "snapshots"))
-          bak = Repository(make(b, "backup"))
+            src = Repository(make(s, "snapshots"), send_filters)
+            bak = Repository(make(b, "backup"), recv_filters)
 
-          # Remember absolute path of the subvolume to backup for later
-          # use.
-          subvolume = s.path("home", "user")
-          syncRepos([subvolume], src, bak)
+            # Remember absolute path of the subvolume to backup for later
+            # use.
+            subvolume = s.path("home", "user")
+            syncRepos([subvolume], src, bak)
 
-          # Create another snapshot with additional data.
-          make(s, "home", "user", "dir2", "test2", data=b"content2")
-          syncRepos([subvolume], src, bak)
+            # Create another snapshot with additional data.
+            make(s, "home", "user", "dir2", "test2", data=b"content2")
+            syncRepos([subvolume], src, bak)
 
-      # Create a new (empty) btrfs file system.
-      with BtrfsDevice() as btrfs:
-        with Mount(btrfs.device()) as d:
-          self.assertEqual(glob(d.path("*")), [])
+        # Create a new (empty) btrfs file system.
+        with BtrfsDevice() as btrfs:
+          with Mount(btrfs.device()) as d:
+            self.assertEqual(glob(d.path("*")), [])
 
-          # Restore the snapshot from the backup. Note that we had to
-          # remember the absolute path of the original directory of the
-          # subvolume we backed up because that path likely changed when
-          # we created a new btrfs device and mounted it (a new
-          # temporary directory is used).
-          dst = Repository(d.path())
-          restore([subvolume], bak, dst, snapshots_only=True)
-          snap, = dst.snapshots()
+            # We have to create a new backup repository because for
+            # restoring data the filters have to be reversed.
+            bak = Repository(make(b, "backup"), send_filters)
+            dst = Repository(d.path(), recv_filters)
 
-          file1 = dst.path(snap["path"], "dir", "test1")
-          file2 = dst.path(snap["path"], "dir2", "test2")
+            # Restore the snapshot from the backup. Note that we had to
+            # remember the absolute path of the original directory of the
+            # subvolume we backed up because that path likely changed when
+            # we created a new btrfs device and mounted it (a new
+            # temporary directory is used).
+            restore([subvolume], bak, dst, snapshots_only=True)
+            snap, = dst.snapshots()
 
-          self.assertContains(file1, "content1")
-          self.assertContains(file2, "content2")
+            file1 = dst.path(snap["path"], "dir", "test1")
+            file2 = dst.path(snap["path"], "dir2", "test2")
+
+            self.assertContains(file1, "content1")
+            self.assertContains(file2, "content2")
+
+    send_filters = [
+      [_GZIP, "--stdout", "--fast"],
+      [_BZIP, "--stdout", "--compress", "--small"],
+    ]
+    recv_filters = [
+      [_BZIP, "--decompress", "--small"],
+      [_GZIP, "--decompress"],
+    ]
+
+    # Case 1) Full sync and restore without any filters.
+    syncAndRestore()
+
+    # Case 2) Sync and restore with filters in wrong order. That is, the
+    #         gzip compressed stream will be attempted to be
+    #         decompressed by bzip2 which is bound to fail. This is our
+    #         way of verifying that actual compression and decompression
+    #         happens.
+    with self.assertRaises(ChildProcessError):
+      syncAndRestore(send_filters, list(reversed(recv_filters)))
+
+    # Case 3) Sync and restore with properly ordered filters. Everything
+    #         must work as expected.
+    syncAndRestore(send_filters, recv_filters)
 
 
   def testRepositoryRestoreFailExists(self):

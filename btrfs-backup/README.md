@@ -118,6 +118,50 @@ longer than it should or appears to be stalled [1]. In such an event the
 the downside of no error message but only exit codes being available in
 the case of command failure.
 
+### Filters
+btrfs-backup supports the notion of filters to process the serialized
+data stream of a subvolume or incremental changes. Using filters it is
+possible to insert arbitrary commands into the post-serialization and
+pre-deserialization process. This functionality can be used to apply
+compression to the backup process, for example.
+
+The program distinguishes between two filters: a send filter is applied
+after serialization of data took place during a backup and a receive
+filter takes effect before deserialization in a restore operation. Under
+normal circumstances, both filters complement each other with the
+receive filter reverting the changes made by the send filter.
+An example usage is compression. In a compression scenario the send
+filter could be used to compress the data stream and the receive filter
+can decompress it again.
+
+Filters can be specified by means of the --send-filter and --recv-filter
+options. All filtering commands have to be specified with absolute paths
+to the script or binary to invoke as a filter. Multiple filters can be
+specified by supplying multiple options. The order in which each of the
+send and receive filters is applied equals the order in which the
+respective options were given. A sample invocation using gzip and bzip2
+for compression and decompression could look like this:
+
+$ btrfs-backup backup --send-filter='/bin/gzip --stdout'
+                      --send-filter='/bin/bzip2 --stdout --compress'
+                      --recv-filter='/bin/bzip2 --decompress'
+                      --recv-filter='/bin/gzip --decompress'
+                      --subvolume=subvolume/ snapshots/ backup/
+
+Note that this example is designed to illustrate usage of the filter
+options. In a production scenario one would not apply two compression
+methods on top of each other. Also, compression is used as an
+illustrative example here. Other uses can be thought of (replication and
+encryption, for instance). Arguably, compression of the binary data
+stream might not result in much savings of bandwidth since it is
+reasonable to believe that the btrfs program already creates a
+sufficiently compressed stream of data.
+Note furthermore that since filters are sensitive to ordering, they have
+to be reordered for the restore case unless the --reverse option
+(explained above) is used.
+Lastly, note that filtering can be combined with remote command
+execution as one would naively expect.
+
 [1] For the technically interested person: the reason the program
     appears stalled is because in order to provide reasonable error
     messages, btrfs-backup reads data from stderr. In the SSH example

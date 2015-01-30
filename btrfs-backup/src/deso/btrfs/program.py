@@ -28,12 +28,12 @@ from deso.btrfs.repository import (
 
 class Program:
   """A program object performs the actual work of synchronizing two repositories."""
-  def __init__(self, subvolumes, src_repo, dst_repo, read_err=True,
-               remote_cmd=None):
+  def __init__(self, subvolumes, src_repo, dst_repo, send_filters=None,
+               recv_filters=None, read_err=True, remote_cmd=None):
     """Create a new Program object using the given subvolumes and repositories."""
     self._subvolumes = subvolumes
-    self._src_repo = Repository(src_repo, read_err)
-    self._dst_repo = Repository(dst_repo, read_err, remote_cmd)
+    self._src_repo = Repository(src_repo, send_filters, read_err)
+    self._dst_repo = Repository(dst_repo, recv_filters, read_err, remote_cmd)
 
 
   def backup(self, keep_for=None):

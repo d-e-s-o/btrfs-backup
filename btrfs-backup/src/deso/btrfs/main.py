@@ -54,7 +54,8 @@ def version():
   return "0.1"
 
 
-def run(method, subvolumes, src_repo, dst_repo, read_err=True,
+def run(method, subvolumes, src_repo, dst_repo,
+        send_filters=None, recv_filters=None, read_err=True,
         remote_cmd=None, debug=False, **kwargs):
   """Start actual execution."""
   try:
@@ -73,10 +74,14 @@ def run(method, subvolumes, src_repo, dst_repo, read_err=True,
     #       spaces in their path. E.g., "/bin/connect to server" would
     #       not be a valid command.
     remote_cmd = remote_cmd.split()
+  if send_filters:
+    send_filters = [filt.split() for filt in send_filters]
+  if recv_filters:
+    recv_filters = [filt.split() for filt in recv_filters]
 
   try:
-    program = Program(subvolumes, src_repo, dst_repo, read_err,
-                      remote_cmd)
+    program = Program(subvolumes, src_repo, dst_repo, send_filters,
+                      recv_filters, read_err, remote_cmd)
     method(program)(**kwargs)
     return 0
   except ChildProcessError as e:
@@ -146,7 +151,20 @@ def addOptionalArgs(parser):
   )
   parser.add_argument(
     "--reverse", action="store_true", dest="reverse", default=False,
-    help="Reverse (i.e., swap) the source and destination repositories.",
+    help="Reverse (i.e., swap) the source and destination repositories "
+         "as well as the send and receive filters.",
+  )
+  parser.add_argument(
+    "--send-filter", action="append", default=None, dest="send_filters",
+    metavar="command", nargs=1,
+    help="A filter command applied in the snapshot send process. "
+         "Multiple send filters can be supplied.",
+  )
+  parser.add_argument(
+    "--recv-filter", action="append", default=None, dest="recv_filters",
+    metavar="command", nargs=1,
+    help="A filter command applied in the snapshot receive process. "
+         "Multiple receive filters can be supplied.",
   )
   parser.add_argument(
     "--debug", action="store_true", dest="debug", default=False,
@@ -260,23 +278,31 @@ def main(argv):
   namespace = parser.parse_args(argv[1:])
 
   with alias(namespace) as ns:
-    # The namespace's subvolumes are stored as a list of list of
-    # strings. Convert it to a list of strings.
+    # The namespace's appended list arguments are stored as a list of
+    # list of strings. Convert each to a list of strings.
     subvolumes = [x for x, in ns.subvolumes]
+    send_filters = [x for x, in ns.send_filters] if ns.send_filters else None
+    recv_filters = [x for x, in ns.recv_filters] if ns.recv_filters else None
 
     if ns.reverse:
       src_repo, dst_repo = ns.dst, ns.src
+      send_filters, recv_filters = recv_filters, send_filters
     else:
       src_repo, dst_repo = ns.src, ns.dst
+      send_filters, recv_filters = send_filters, recv_filters
 
     if ns.command == "backup":
       return run(lambda x: x.backup, subvolumes, src_repo, dst_repo,
+                 send_filters=send_filters,
+                 recv_filters=recv_filters,
                  read_err=ns.read_err,
                  remote_cmd=ns.remote_cmd,
                  keep_for=ns.keep_for,
                  debug=ns.debug)
     elif ns.command == "restore":
       return run(lambda x: x.restore, subvolumes, src_repo, dst_repo,
+                 send_filters=send_filters,
+                 recv_filters=recv_filters,
                  read_err=ns.read_err,
                  remote_cmd=ns.remote_cmd,
                  snapshots_only=ns.snapshots_only,

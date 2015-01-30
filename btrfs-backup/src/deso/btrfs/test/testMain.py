@@ -191,32 +191,43 @@ class TestMain(BtrfsTestCase):
         self.assertEqual(len(glob(m.path("snapshots", "*"))), 1)
 
 
-  def testRemoteCommand(self):
-    """Verify that the remote command correctly prefixes some btrfs commands."""
+  def testRemoteAndFilterCommands(self):
+    """Verify that the remote and send/receive filter commands are used correctly."""
     remote_cmd = "/usr/bin/ssh server"
+    send_filt1 = "/bin/gzip --stdout --fast"
+    send_filt2 = "/bin/bzip2 --stdout --compress --small"
+    recv_filt1 = "/bin/bzip2 --decompress --small"
+    recv_filt2 = "/bin/gzip --decompress"
 
-    def isRemote(command):
-      """Check if a command is a remote command."""
-      return " ".join(command).startswith(remote_cmd)
+    def isCommand(command, cmd_string):
+      """Check if a given command begins with the given string."""
+      return " ".join(command).startswith(cmd_string)
 
-    def filterCommand(command):
+    def removeRemoteCommand(command):
       """Filter all remote command parts from a command (if any)."""
       # Since we do not have an SSH server running (and do not want to),
       # filter out the remote command part before execution.
-      if isRemote(command):
+      if isCommand(command, remote_cmd):
         command = command[2:]
 
       return command
 
+    def isNoFilterCommand(command):
+      """Check if a command is a filter command."""
+      return not (isCommand(command, send_filt1) or\
+                  isCommand(command, send_filt2) or\
+                  isCommand(command, recv_filt1) or\
+                  isCommand(command, recv_filt2))
+
     def filterCommands(commands):
-      """Filter all remote command parts from a command list (if any)."""
-      return [filterCommand(cmd) for cmd in commands]
+      """Filter all remote and filter command parts from a command list (if any)."""
+      return list(map(removeRemoteCommand, filter(isNoFilterCommand, commands)))
 
     def executeWrapper(*args, **kwargs):
       """Wrapper around the execute function that stores the commands it executed."""
       command = list(args)
       all_commands.append(command)
-      command = filterCommand(command)
+      command = removeRemoteCommand(command)
 
       return execute(*command, **kwargs)
 
@@ -232,23 +243,37 @@ class TestMain(BtrfsTestCase):
     with patch("deso.btrfs.repository.execute", wraps=executeWrapper),\
          patch("deso.btrfs.repository.pipeline", wraps=pipelineWrapper):
       with alias(self._mount) as m:
-        make(m, "subvol", subvol=True)
-        make(m, "snapshots")
-        make(m, "backup")
+        subvolume = make(m, "subvol", subvol=True)
+        snapshots = make(m, "snapshots")
+        backup = make(m, "backup")
 
-        remote = "--remote-cmd=%s" % remote_cmd
-        args = "backup --subvolume {subvol} {src} {dst}"
-        args = args.format(subvol=m.path("subvol"),
-                           src=m.path("snapshots"),
-                           dst=m.path("backup"))
-        result = btrfsMain([argv[0]] + args.split() + [remote])
+        args = [
+          "backup",
+          "--subvolume=%s" % subvolume,
+          snapshots,
+          backup,
+          "--remote-cmd=%s" % remote_cmd,
+          "--send-filter=%s" % send_filt1,
+          "--recv-filter=%s" % send_filt2,
+          "--send-filter=%s" % recv_filt1,
+          "--recv-filter=%s" % recv_filt2,
+        ]
+        result = btrfsMain([argv[0]] + args)
         self.assertEqual(result, 0)
 
     # We do not check all commands here. However, we know for sure that
     # btrfs receive should be run on the remote side. So check that it
     # is properly prefixed.
     receive, = list(filter(lambda x: "receive" in x, all_commands))
-    self.assertTrue(isRemote(receive), receive)
+    self.assertTrue(isCommand(receive, remote_cmd), receive)
+
+    # Similarly, each of the send and receive filters should appear
+    # somewhere in the commands.
+    send_filt, = list(filter(lambda x: isCommand(x, send_filt1), all_commands))
+    self.assertNotEqual(send_filt, [])
+
+    recv_filt, = list(filter(lambda x: isCommand(x, recv_filt2), all_commands))
+    self.assertNotEqual(recv_filt, [])
 
 
   def testNoStderrRead(self):

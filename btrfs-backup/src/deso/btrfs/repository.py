@@ -365,10 +365,10 @@ def _deploy(snapshot, parent, src, dst, src_snaps, subvolume):
   read_err = src.readStderr and dst.readStderr
   # Finally transfer the snapshot from the source repository to the
   # destination.
-  pipeline([
-    src.command(serialize, src.path(snapshot), parents),
-    dst.command(deserialize, dst.path()),
-  ], read_err=read_err)
+  src_cmds = src.pipeline(True, serialize, src.path(snapshot), parents)
+  dst_cmds = dst.pipeline(False, deserialize, dst.path())
+
+  pipeline(src_cmds + dst_cmds, read_err=read_err)
 
 
 def _sync(subvolume, src, dst):
@@ -520,11 +520,13 @@ def _trail(path):
 
 class Repository:
   """This class represents a repository for snapshots."""
-  def __init__(self, directory, read_err=True, remote_cmd=None):
+  def __init__(self, directory, filters=None, read_err=True,
+               remote_cmd=None):
     """Initialize the object and bind it to the given directory."""
     # We always work with absolute paths here.
     directory = abspath(directory)
 
+    self._filters = filters
     self._read_err = read_err
     self._remote_cmd = remote_cmd
     self._root = _findRoot(directory, self)
@@ -608,6 +610,17 @@ class Repository:
     """Create a command."""
     command = function(*args, **kwargs)
     return (self._remote_cmd if self._remote_cmd else []) + command
+
+
+  def pipeline(self, send, function, *args, **kwargs):
+    """Create a command pipeline that includes all user supplied filters."""
+    command = self.command(function, *args, **kwargs)
+    # We assume the filters are already ordered according to the
+    # intention to send or receive.
+    if send:
+      return [command] + (self._filters if self._filters else [])
+    else:
+      return (self._filters if self._filters else []) + [command]
 
 
   @property
