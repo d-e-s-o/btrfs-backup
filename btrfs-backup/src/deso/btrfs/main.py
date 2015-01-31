@@ -22,6 +22,9 @@
 from deso.btrfs.alias import (
   alias,
 )
+from deso.btrfs.argv import (
+  insert as insertArg,
+)
 from sys import (
   argv as sysargv,
   stderr,
@@ -36,6 +39,8 @@ from argparse import (
   ArgumentParser,
   ArgumentTypeError,
   HelpFormatter,
+  Namespace,
+  SUPPRESS,
 )
 
 
@@ -118,6 +123,18 @@ def duration(string):
   raise ArgumentTypeError("Invalid duration string: \"%s\"." % string)
 
 
+def reverse(_, namespace):
+  """Helper function to reverse arguments during parsing."""
+  # In case the reverse option was given we swap the repositories and
+  # the filters.
+  with alias(namespace) as ns:
+    if ns.reverse:
+      ns.src, ns.dst = ns.dst, ns.src
+      ns.send_filters, ns.recv_filters = ns.recv_filters, ns.send_filters
+
+  return None
+
+
 def addStandardArgs(parser):
   """Add the standard arguments --version and --help to an argument parser."""
   parser.add_argument(
@@ -130,7 +147,7 @@ def addStandardArgs(parser):
   )
 
 
-def addOptionalArgs(parser):
+def addOptionalArgs(parser, namespace):
   """Add the optional arguments to a parser."""
   parser.add_argument(
     "--no-read-stderr", action="store_false", dest="read_err", default=True,
@@ -153,6 +170,13 @@ def addOptionalArgs(parser):
     "--reverse", action="store_true", dest="reverse", default=False,
     help="Reverse (i.e., swap) the source and destination repositories "
          "as well as the send and receive filters.",
+  )
+  # A helper option that is used to perform the argument reordering
+  # during parsing.
+  parser.add_argument(
+    "--reverse-hidden-helper", action="store", default=None,
+    dest="reverse_hidden_helper", help=SUPPRESS,
+    type=lambda x: reverse(x, namespace),
   )
   parser.add_argument(
     "--send-filter", action="append", default=None, dest="send_filters",
@@ -191,7 +215,7 @@ def addRequiredArgs(parser):
   )
 
 
-def addBackupParser(parser):
+def addBackupParser(parser, namespace):
   """Add a parser for the backup command to another parser."""
   backup = parser.add_parser(
     "backup", add_help=False, formatter_class=SubLevelHelpFormatter,
@@ -212,11 +236,11 @@ def addBackupParser(parser):
          "suffixes are: S (seconds), M (minutes), H (hours), d (days), "
          "w (weeks), m (months), and y (years).",
   )
-  addOptionalArgs(optional)
+  addOptionalArgs(optional, namespace)
   addStandardArgs(optional)
 
 
-def addRestoreParser(parser):
+def addRestoreParser(parser, namespace):
   """Add a parser for the restore command to another parser."""
   restore = parser.add_parser(
     "restore", add_help=False, formatter_class=SubLevelHelpFormatter,
@@ -232,7 +256,7 @@ def addRestoreParser(parser):
     default=False,
     help="Restore only snapshots, not the entire source subvolume."
   )
-  addOptionalArgs(optional)
+  addOptionalArgs(optional, namespace)
   addStandardArgs(optional)
 
 
@@ -259,6 +283,8 @@ class SubLevelHelpFormatter(HelpFormatter):
 
 def main(argv):
   """The main function parses the program arguments and reacts on them."""
+  # We need access to the namespace object that parse_args() works on.
+  namespace = Namespace()
   parser = ArgumentParser(prog=name(), add_help=False,
                           description="%s -- %s" % (name(), description()),
                           formatter_class=TopLevelHelpFormatter)
@@ -270,12 +296,21 @@ def main(argv):
   optional = parser.add_argument_group("Optional arguments")
   addStandardArgs(optional)
 
-  addBackupParser(subparsers)
-  addRestoreParser(subparsers)
+  addBackupParser(subparsers, namespace)
+  addRestoreParser(subparsers, namespace)
 
   # Note that argv contains the path to the program as the first element
-  # which we kindly ignore.
-  namespace = parser.parse_args(argv[1:])
+  # which we kindly ignore. Furthermore, we do some trickery to have
+  # proper argument checking: In order to have less branching in
+  # various cases, we want to evaluate the --reverse option on the fly.
+  # The problem there is that it does not accept an argument. So we
+  # insert an artificial, undocumented option that performs the checking
+  # (--reverse-hidden-helper). This option has to be evaluated after
+  # the actual --reverse option -- a property which is guaranteed since
+  # we insert it at the end.
+  args = argv[1:].copy()
+  args = insertArg(args, ["--reverse-hidden-helper", "42"])
+  parser.parse_args(args, namespace)
 
   with alias(namespace) as ns:
     # The namespace's appended list arguments are stored as a list of
@@ -284,15 +319,8 @@ def main(argv):
     send_filters = [x for x, in ns.send_filters] if ns.send_filters else None
     recv_filters = [x for x, in ns.recv_filters] if ns.recv_filters else None
 
-    if ns.reverse:
-      src_repo, dst_repo = ns.dst, ns.src
-      send_filters, recv_filters = recv_filters, send_filters
-    else:
-      src_repo, dst_repo = ns.src, ns.dst
-      send_filters, recv_filters = send_filters, recv_filters
-
     if ns.command == "backup":
-      return run(lambda x: x.backup, subvolumes, src_repo, dst_repo,
+      return run(lambda x: x.backup, subvolumes, ns.src, ns.dst,
                  send_filters=send_filters,
                  recv_filters=recv_filters,
                  read_err=ns.read_err,
@@ -300,7 +328,7 @@ def main(argv):
                  keep_for=ns.keep_for,
                  debug=ns.debug)
     elif ns.command == "restore":
-      return run(lambda x: x.restore, subvolumes, src_repo, dst_repo,
+      return run(lambda x: x.restore, subvolumes, ns.src, ns.dst,
                  send_filters=send_filters,
                  recv_filters=recv_filters,
                  read_err=ns.read_err,

@@ -1,4 +1,4 @@
-# __init__.py
+# argv.py
 
 #/***************************************************************************
 # *   Copyright (C) 2015 deso (deso@posteo.net)                             *
@@ -17,31 +17,18 @@
 # *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
 # ***************************************************************************/
 
-"""Initialization file of the btrfs.test module."""
-
-from os.path import (
-  dirname,
-)
-from unittest import (
-  TestLoader,
-  TestSuite,
-)
+"""Functionality for modifying an argv style argument vector."""
 
 
-def allTests():
-  """Retrieve a test suite containing all tests."""
-  # Explicitly load all tests by name and not using a single discovery
-  # to be able to easily deselect parts.
-  tests = [
-    "testArgv.py",
-    "testBtrfs.py",
-    "testDefer.py",
-    "testLocaleCompliance.py",
-    "testMain.py",
-    "testRepository.py",
-  ]
+def insert(args, arg):
+  """Insert an argument at the end of an argument vector."""
+  # Depending on whether there exists a -- separator we have to insert
+  # the argument just in front of it or truly at the end of the vector.
+  try:
+    l = len(args)
+    i = l - list(reversed(args)).index("--") - 1
+  except ValueError:
+    i = l
 
-  loader = TestLoader()
-  directory = dirname(__file__)
-  suites = [loader.discover(directory, pattern=test) for test in tests]
-  return TestSuite(suites)
+  args[i:i] = arg
+  return args

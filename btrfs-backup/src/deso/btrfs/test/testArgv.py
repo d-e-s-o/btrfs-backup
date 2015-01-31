@@ -1,4 +1,4 @@
-# __init__.py
+# testArgv.py
 
 #/***************************************************************************
 # *   Copyright (C) 2015 deso (deso@posteo.net)                             *
@@ -17,31 +17,30 @@
 # *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
 # ***************************************************************************/
 
-"""Initialization file of the btrfs.test module."""
+"""Test the argv module."""
 
-from os.path import (
-  dirname,
+from deso.btrfs.argv import (
+  insert,
 )
 from unittest import (
-  TestLoader,
-  TestSuite,
+  main,
+  TestCase,
 )
 
 
-def allTests():
-  """Retrieve a test suite containing all tests."""
-  # Explicitly load all tests by name and not using a single discovery
-  # to be able to easily deselect parts.
-  tests = [
-    "testArgv.py",
-    "testBtrfs.py",
-    "testDefer.py",
-    "testLocaleCompliance.py",
-    "testMain.py",
-    "testRepository.py",
-  ]
+class TestArgv(TestCase):
+  """Test case for the argv related functionality."""
+  def testInsertArg(self):
+    """Verify insertion of arguments works as expected."""
+    arg = "--test"
+    self.assertEqual(insert([], [arg]), [arg])
+    self.assertEqual(insert(["--"], [arg]), [arg, "--"])
+    self.assertEqual(insert(["--", "arg"], [arg]), [arg, "--", "arg"])
 
-  loader = TestLoader()
-  directory = dirname(__file__)
-  suites = [loader.discover(directory, pattern=test) for test in tests]
-  return TestSuite(suites)
+    args = ["--test2", "--", "arg"]
+    expected = ["--test2", arg, "--", "arg"]
+    self.assertEqual(insert(args, [arg]), expected)
+
+
+if __name__ == "__main__":
+  main()
