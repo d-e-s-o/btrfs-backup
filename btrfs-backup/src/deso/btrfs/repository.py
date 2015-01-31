@@ -151,16 +151,25 @@ def _snapshots(repository):
 
 def _isRoot(directory, repository):
   """Check if a given directory represents the root of a btrfs file system."""
-  cmd = repository.command(show, directory)
-  output, _ = execute(*cmd, read_out=True, read_err=repository.readStderr)
-  output = output.decode("utf-8")[:-1].split("\n")
+  if not isdir(directory):
+    raise FileNotFoundError("Directory \"%s\" not found." % directory)
 
-  # The output of show() contains multiple lines in case the given
-  # directory is a subvolume. In case it is an ordinary directory the
-  # output is a single line and begins with "ERROR:" (but the command
-  # actually succeeds), and in case of the root directory it will be
-  # matched here.
-  return len(output) == 1 and output[0].endswith(_SHOW_IS_ROOT)
+  try:
+    cmd = repository.command(show, directory)
+    output, _ = execute(*cmd, read_out=True, read_err=repository.readStderr)
+    output = output.decode("utf-8")[:-1].split("\n")
+
+    # The output of show() contains multiple lines in case the given
+    # directory is a subvolume. In case it is an ordinary directory the
+    # output is a single line and begins with "ERROR:" (but the command
+    # actually succeeds), and in case of the root directory it will be
+    # matched here.
+    return len(output) == 1 and output[0].endswith(_SHOW_IS_ROOT)
+  except ChildProcessError:
+    # Starting with btrfs-progs-3.17.3 the show command will return an
+    # error code in case the supplied directory is not a btrfs
+    # subvolume which will manifest as an exception here.
+    return False
 
 
 def _findRoot(directory, repository):

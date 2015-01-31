@@ -81,9 +81,9 @@ class TestRepositoryBase(BtrfsTestCase):
   def testRepositoryInNonExistentDirectory(self):
     """Verify that creation of a repository in a non-existent directory fails."""
     directory = "a-non-existent-directory"
-    regex = r"%s.*No such file or directory" % directory
+    regex = r"Directory.*%s.*not found" % directory
 
-    with self.assertRaisesRegex(ChildProcessError, regex):
+    with self.assertRaisesRegex(FileNotFoundError, regex):
       Repository(self._mount.path(directory))
 
 

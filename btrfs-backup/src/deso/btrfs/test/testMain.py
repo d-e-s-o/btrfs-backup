@@ -144,7 +144,7 @@ class TestMain(BtrfsTestCase):
       self.assertNotEqual(result, 0)
 
       args = args_base.format(e=join(path, "not-existant"), d="--debug")
-      with self.assertRaises(ChildProcessError):
+      with self.assertRaises(FileNotFoundError):
         btrfsMain([argv[0]] + args.split())
 
 
