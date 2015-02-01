@@ -50,6 +50,7 @@ from deso.execute import (
   pipeline,
 )
 from os.path import (
+  extsep,
   join,
 )
 from glob import (
@@ -146,6 +147,39 @@ class TestMain(BtrfsTestCase):
       args = args_base.format(e=join(path, "not-existant"), d="--debug")
       with self.assertRaises(FileNotFoundError):
         btrfsMain([argv[0]] + args.split())
+
+
+  def testSnapshotExtOption(self):
+    """Verify that the --snapshot-ext option works as expected."""
+    def runMain(*args):
+      """Run the program."""
+      execute(executable, "-m", "deso.btrfs.main", *args)
+
+    regex = r"Extension must not start"
+    with self.assertRaisesRegex(ChildProcessError, regex):
+      runMain("backup", "--snapshot-ext=%senc" % extsep)
+
+    regex = r"The last receive filter must contain"
+    with self.assertRaisesRegex(ChildProcessError, regex):
+      runMain("backup", "--snapshot-ext=gz", "--recv-filter", "/bin/gzip")
+
+    regex = r"The first send filter must contain"
+    with self.assertRaisesRegex(ChildProcessError, regex):
+      runMain("restore", "--snapshot-ext=gz", "--send-filter", "/bin/gzip")
+
+    # This call succeeds from the point of view of supplying the
+    # snapshot-ext option but other arguments are missing so we still
+    # bail out.
+    regex = r"arguments are required"
+    with self.assertRaisesRegex(ChildProcessError, regex):
+      runMain("backup", "--snapshot-ext=gz", "--recv-filter=/bin/gzip",
+              "--recv-filter", "/bin/dd of={file}")
+
+    regex = r"arguments are required"
+    with self.assertRaisesRegex(ChildProcessError, regex):
+      runMain("restore", "--snapshot-ext=gz",
+              "--send-filter=/bin/dd if={file}",
+              "--send-filter", "/bin/gzip")
 
 
   def testKeepFor(self):

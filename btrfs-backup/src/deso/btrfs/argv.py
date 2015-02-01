@@ -32,3 +32,36 @@ def insert(args, arg):
 
   args[i:i] = arg
   return args
+
+
+def remove(args, option):
+  """Remove an option along with an argument from an argument vector."""
+  i = 0
+  while i < len(args):
+    # There are two forms in which an option can appear in conjunction
+    # with an argument after parsing. The first one is as two separate
+    # arguments if both were separated using whitespaces.
+    if args[i] == option:
+      result = [args[i], args[i+1]]
+      del args[i+1]
+      del args[i]
+      return args, result
+
+    # The second one is as a single argument in which case they must
+    # have been separated by an equality sign ('=').
+    if args[i].startswith(option):
+      assert "=" in args[i]
+      result = [args[i]]
+      del args[i]
+      return args, result
+
+    i += 1
+  return args, None
+
+
+def reorder(args, option):
+  """Move an option along with its argument to the end of the given argument vector."""
+  args, arg = remove(args, option)
+  if arg:
+    insert(args, arg)
+  return args

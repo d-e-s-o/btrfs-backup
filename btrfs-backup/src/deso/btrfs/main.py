@@ -24,10 +24,14 @@ from deso.btrfs.alias import (
 )
 from deso.btrfs.argv import (
   insert as insertArg,
+  reorder as reorderArg,
 )
 from sys import (
   argv as sysargv,
   stderr,
+)
+from os import (
+  extsep,
 )
 from re import (
   compile as regex,
@@ -123,6 +127,44 @@ def duration(string):
   raise ArgumentTypeError("Invalid duration string: \"%s\"." % string)
 
 
+def checkSnapshotExtension(string, namespace, backup=True):
+  """Validate the given snapshot extension parameter."""
+  if string.startswith(extsep):
+    error = "Extension must not start with \"%s\"." % extsep
+    raise ArgumentTypeError(error)
+
+  # We require that the namespace is already fully set up with the
+  # appropriate filter argument. This constraint is enforced by
+  # reordering the arguments before parsing them such that the snapshot
+  # extension argument appears (and is evaluated) last.
+  if backup:
+    if not namespace.recv_filters:
+      error = "This option must be used in conjunction with --recv-filter."
+      raise ArgumentTypeError(error)
+  else:
+    if not namespace.send_filters:
+      error = "This option must be used in conjunction with --send-filter."
+      raise ArgumentTypeError(error)
+
+  # There are different ways the {file} string can be provided which
+  # depend on the command used. It might be part of a short option, a
+  # long option, or it can be a stand alone argument. We do not care as
+  # long as it does exist and so just create a string out of the
+  # respective filter command and scan it instead of inspecting every
+  # single argument of the command.
+  if backup:
+    if not "{file}" in " ".join(namespace.recv_filters[-1]):
+      error = "The last receive filter must contain the \"{file}\" string."
+      raise ArgumentTypeError(error)
+  else:
+    if not "{file}" in " ".join(namespace.send_filters[0]):
+      error = "The first send filter must contain the \"{file}\" string."
+      raise ArgumentTypeError(error)
+
+  # The extension we store always includes the separator.
+  return "%s%s" % (extsep, string)
+
+
 def reverse(_, namespace):
   """Helper function to reverse arguments during parsing."""
   # In case the reverse option was given we swap the repositories and
@@ -147,7 +189,7 @@ def addStandardArgs(parser):
   )
 
 
-def addOptionalArgs(parser, namespace):
+def addOptionalArgs(parser, namespace, backup):
   """Add the optional arguments to a parser."""
   parser.add_argument(
     "--no-read-stderr", action="store_false", dest="read_err", default=True,
@@ -189,6 +231,41 @@ def addOptionalArgs(parser, namespace):
     metavar="command", nargs=1,
     help="A filter command applied in the snapshot receive process. "
          "Multiple receive filters can be supplied.",
+  )
+
+  if backup:
+    text = "Extension to use for storing a snapshot file. Only allowed "\
+           "in conjunction with a custom receive filter that stores data "\
+           "in a file (with the given extension) rather than to "\
+           "deserialize the stream into a btrfs subvolume. In this case, "\
+           "the very last receive filter must contain the string "\
+           "\"{file}\" (without quotes) which will be replaced by the "\
+           "file name of the snapshot to create. The filter must ensure "\
+           "to save the data it received on stdin (and potentially "\
+           "processed) into the given file."
+  else:
+    text = "Extension to use for identifying a snapshot file. Only "\
+           "allowed in conjunction with a custom send filter that reads "\
+           "data from multiple files (with the given extension) rather "\
+           "than to serialize btrfs snapshots or subvolumes. In this "\
+           "case, the first send filter must contain the string "\
+           "\"{file}\" (without quotes). The argument containing this "\
+           "string will be replicated for each file to send. The filter "\
+           "must ensure to output the (potentially processed) data to "\
+           "stdout."
+
+  # Unfortunately, the only acceptable way to allow for proper checking
+  # of all constraints which the filters have to satisfy in case
+  # --snapshot-ext is provided, is to work on the ArgumentParser's
+  # namespace object here. Since the ArgumentParser parses arguments in
+  # the order they are supplied on the command line (as opposed to the
+  # order they were added in), we rely on the fact that the
+  # --snapshot-ext option is at the end of the argument vector here. The
+  # reorderArg invocation used earlier enforces this property.
+  parser.add_argument(
+    "--snapshot-ext", action="store", dest="extension", metavar="extension",
+    type=lambda x: checkSnapshotExtension(x, namespace, backup),
+    help=text,
   )
   parser.add_argument(
     "--debug", action="store_true", dest="debug", default=False,
@@ -236,7 +313,7 @@ def addBackupParser(parser, namespace):
          "suffixes are: S (seconds), M (minutes), H (hours), d (days), "
          "w (weeks), m (months), and y (years).",
   )
-  addOptionalArgs(optional, namespace)
+  addOptionalArgs(optional, namespace, backup=True)
   addStandardArgs(optional)
 
 
@@ -256,7 +333,7 @@ def addRestoreParser(parser, namespace):
     default=False,
     help="Restore only snapshots, not the entire source subvolume."
   )
-  addOptionalArgs(optional, namespace)
+  addOptionalArgs(optional, namespace, backup=False)
   addStandardArgs(optional)
 
 
@@ -301,15 +378,23 @@ def main(argv):
 
   # Note that argv contains the path to the program as the first element
   # which we kindly ignore. Furthermore, we do some trickery to have
-  # proper argument checking: In order to have less branching in
+  # proper argument checking: For the --snapshot-ext option we perform
+  # various checks (see checkSnapshotExtension). For this checking to
+  # work the option has to be evaluated after all filter options. To
+  # that end, we move it to the end of the options because the
+  # ArgumentParser evaluates arguments in the order in which they are
+  # provided in the argument vector. In order to have less branching in
   # various cases, we want to evaluate the --reverse option on the fly.
   # The problem there is that it does not accept an argument. So we
   # insert an artificial, undocumented option that performs the checking
-  # (--reverse-hidden-helper). This option has to be evaluated after
-  # the actual --reverse option -- a property which is guaranteed since
-  # we insert it at the end.
+  # (--reverse-hidden-helper). Because --snapshot-ext already requires
+  # properly ordered arguments, the hidden reverse helper option has to
+  # be evaluated before the former (it also has to be evaluated after
+  # the actual --reverse option, but that is guaranteed since we insert
+  # it at the end).
   args = argv[1:].copy()
   args = insertArg(args, ["--reverse-hidden-helper", "42"])
+  args = reorderArg(args, "--snapshot-ext")
   parser.parse_args(args, namespace)
 
   with alias(namespace) as ns:
