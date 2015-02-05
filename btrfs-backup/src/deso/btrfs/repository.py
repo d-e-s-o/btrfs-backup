@@ -315,7 +315,13 @@ def _createSnapshot(subvolume, repository, snapshots):
   """Create a snapshot of the given subvolume in the given repository."""
   name = _snapshotName(subvolume, snapshots)
   cmd = repository.command(mkSnapshot, subvolume, repository.path(name))
+  execute(*cmd, read_err=repository.readStderr)
 
+  # We create a snapshot and we (very likely) serialize it. So make sure
+  # that it is persisted to disk. This step is performed here and not
+  # before the actual deployment because here we are guaranteed to be
+  # working on a "real" btrfs subvolume which we can sync.
+  cmd = repository.command(syncFs, repository.root)
   execute(*cmd, read_err=repository.readStderr)
   return name
 
@@ -333,6 +339,32 @@ def _findOrCreate(subvolume, repository, snapshots):
     return new, old
 
   return snapshot["path"], snapshot["path"]
+
+
+def _makeRelative(snapshots, directory):
+  """Convert a list of absolute snapshots into a list with relative ones."""
+  # We only want to loop once but we need to remove items during
+  # iteration. So we iterate over a copy while deleting from the
+  # original. In order to ensure all indices are valid even in the face
+  # of deletion, we need to iterate from back to front. The enumerate
+  # function counts in ascending order so for the deletion we need to
+  # subtract the index from the length of the original array but because
+  # of reverse iteration we need to subtract one more.
+  rlen = len(snapshots) - 1
+  copy = snapshots.copy()
+
+  for i, snapshot in enumerate(reversed(copy)):
+    path = snapshot["path"]
+    # Check if the snapshot is not located in this repository's
+    # directory.
+    if path.startswith(directory):
+      # Valid snapshot. Remove the now common prefix.
+      snapshot["path"] = path[len(directory):]
+    else:
+      # Snapshot not in our directory. Remove it from the list.
+      del snapshots[rlen - i]
+
+  return snapshots
 
 
 def _deploy(snapshot, parent, src, dst, src_snaps, subvolume):
@@ -366,9 +398,6 @@ def _deploy(snapshot, parent, src, dst, src_snaps, subvolume):
   else:
     parents = None
 
-  # Be sure to have the snapshot persisted to disk before trying to
-  # serialize it.
-  execute(*src.command(syncFs, src.root), read_err=src.readStderr)
   # Only if both repositories agree that we should read data from
   # stderr we will do so.
   read_err = src.readStderr and dst.readStderr
@@ -541,44 +570,30 @@ class Repository:
     self._root = _findRoot(directory, self)
     self._directory = _trail(directory)
 
-
   def snapshots(self):
     """Retrieve a list of snapshots in this repository."""
+    def makeAbsolute(snapshot):
+      """Convert a snapshot relative to the root directory to an absolute one."""
+      snapshot["path"] = join(self._root, snapshot["path"])
+      return snapshot
+
     snapshots = _snapshots(self)
-
+    # Make all paths absolute.
+    snapshots = list(map(makeAbsolute, snapshots))
     # We need to work around the btrfs problem that not necessarily all
-    # snapshots listed are located in our repository's directory.
-    with alias(self._directory) as prefix:
-      # We only want to loop once but we need to remove items during
-      # iteration. So we iterate over a *copy* while deleting from the
-      # original. In order to ensure all indices are valid even in the
-      # face of deletion, we need to iterate from back to front. The
-      # enumerate function counts in ascending order so for the deletion
-      # we need to subtract the index from the length of the original
-      # array but because of reverse iteration we need to subtract one
-      # more.
-      rlen = len(snapshots) - 1
-      copy = snapshots.copy()
+    # snapshots listed are located in our repository's directory. This
+    # is done as one step along with converting the absolute snapshot
+    # paths to relative ones where we just sort out everything not below
+    # our directory.
+    snapshots = _makeRelative(snapshots, self._directory)
 
-      for i, snapshot in enumerate(reversed(copy)):
-        # Make all paths absolute.
-        path = join(self._root, snapshot["path"])
-        # Check if the snapshot is not located in this repository's
-        # directory.
-        if path.startswith(prefix):
-          # Valid snapshot. Remove the now common prefix.
-          snapshot["path"] = path[len(prefix):]
-        else:
-          # Snapshot not in our directory. Remove it from the list.
-          del snapshots[rlen - i]
-
-      # TODO: We currently return a list of snapshots in the internally
-      #       used format, i.e., a dict that contains a 'path' and a
-      #       'gen' key. Clients should not require the latter
-      #       information and, thus, only the paths should be exposed to
-      #       the outside. Such a change might require some adjustments,
-      #       however, and it is unclear whether it is worth the effort.
-      return snapshots
+    # TODO: We currently return a list of snapshots in the internally
+    #       used format, i.e., dicts that contain a 'path' and a 'gen'
+    #       key. Clients should not require the latter information
+    #       and, thus, only the paths should be exposed to the
+    #       outside. Such a change might require some adjustments,
+    #       however, and it is unclear whether it is worth the effort.
+    return snapshots
 
 
   def purge(self, subvolumes, duration):
