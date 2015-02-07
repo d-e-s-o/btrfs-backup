@@ -383,18 +383,10 @@ def _deploy(snapshot, parent, src, dst, src_snaps, subvolume):
         # nothing to be done.
         return
 
-    # We have to check which snapshots are available in the source
-    # repository as well as the destination repository. These can be
-    # used as parents for the incremental transfer. If none exists on
-    # the destination side, we have to send the latest snapshot in its
-    # entirety (i.e., the entire subvolume).
-    parents = _findCommonSnapshots(src_snaps, dst_snaps)
-    # We have the common set of snapshots, however, these are still
-    # snapshots of arbitrary subvolumes. We are only interested in those
-    # for the subvolume we are working on currently.
-    parents = _findSnapshotsForSubvolume(parents, subvolume)
-    # Convert the snapshot list to paths relative to the source repository.
-    parents = map(lambda x: src.path(x["path"]), parents)
+    # Now let the repository handle determination of the parents to use.
+    # Depending on whether it is a "real" btrfs repository or a file
+    # repository the parent list might be different.
+    parents = src.parents(snapshot, subvolume, src_snaps, dst_snaps)
   else:
     parents = None
 
@@ -403,8 +395,8 @@ def _deploy(snapshot, parent, src, dst, src_snaps, subvolume):
   read_err = src.readStderr and dst.readStderr
   # Finally transfer the snapshot from the source repository to the
   # destination.
-  src_cmds = src.pipeline(True, serialize, src.path(snapshot), parents)
-  dst_cmds = dst.pipeline(False, deserialize, dst.path())
+  src_cmds = src.sendPipeline(snapshot, parents)
+  dst_cmds = dst.recvPipeline(snapshot)
 
   pipeline(src_cmds + dst_cmds, read_err=read_err)
 
@@ -556,8 +548,8 @@ def _trail(path):
   return join(path, "")
 
 
-class Repository:
-  """This class represents a repository for snapshots."""
+class RepositoryBase:
+  """This class represents the base class for repositories for snapshots."""
   def __init__(self, directory, filters=None, read_err=True,
                remote_cmd=None):
     """Initialize the object and bind it to the given directory."""
@@ -567,8 +559,69 @@ class Repository:
     self._filters = filters
     self._read_err = read_err
     self._remote_cmd = remote_cmd
-    self._root = _findRoot(directory, self)
     self._directory = _trail(directory)
+
+  def snapshots(self):
+    """Retrieve a list of snapshots in this repository."""
+    pass
+
+
+  def parents(self, snapshot, subvolume, snapshots=None, dst_snapshots=None):
+    """Retrieve a list of parent snapshots for the given snapshot of the supplied subvolume.
+
+      Note that the interpretation of what a "parent" is exactly is up
+      to the method (and the repository, for that matter). In
+      particular, the main important fact is that the list of parents
+      returned by this function has to be a valid input list for the
+      'sendPipeline' method.
+    """
+    pass
+
+
+  def path(self, *components):
+    """Form an absolute path by combining the given path components."""
+    return join(self._directory, *components)
+
+
+  def command(self, function, *args, **kwargs):
+    """Create a command."""
+    command = function(*args, **kwargs)
+    return (self._remote_cmd if self._remote_cmd else []) + command
+
+
+  def sendPipeline(self, snapshot, parents):
+    """Retrieve a pipeline of commands for sending the given snapshot."""
+    pass
+
+
+  def recvPipeline(self, snapshot):
+    """Retrieve a pipeline of commands for receiving the given snapshot."""
+    pass
+
+
+  @property
+  def readStderr(self):
+    """Check whether or not to read data from stderr when executing a command."""
+    # Note that for the simple reason that we run into issues where to
+    # repositories are involved in a single command execution, having
+    # this property per-repository is not the best idea. However, it was
+    # deemed the most usable one because introducing another abstraction
+    # just for command execution would bloat the code unnecessarily.
+    return self._read_err
+
+
+class Repository(RepositoryBase):
+  """A repository for native snapshots.
+
+    This class represents a native repository, i.e., one located on a
+    btrfs volume. As such, objects of this class can be used as source
+    and target repositories in backup and restore operations.
+  """
+  def __init__(self, directory, *args, **kwargs):
+    """Initialize the repository, query its root in the btrfs file system."""
+    super().__init__(directory, *args, **kwargs)
+    self._root = _findRoot(abspath(directory), self)
+
 
   def snapshots(self):
     """Retrieve a list of snapshots in this repository."""
@@ -625,18 +678,27 @@ class Repository:
     return _diff(found, subvolume, self)
 
 
-  def path(self, *components):
-    """Form an absolute path by combining the given path components."""
-    return join(self._directory, *components)
+  def parents(self, _, subvolume, snapshots=None, dst_snapshots=None):
+    """Retrieve a list of parent snapshots for the given snapshot of the supplied subvolume."""
+    # We have no client not being able to supply the 'snapshots' list.
+    assert snapshots is not None
+
+    # The snapshots we have are still for arbitrary subvolumes. We are
+    # only interested in those for the subvolume we are working on
+    # currently.
+    snapshots = _findSnapshotsForSubvolume(snapshots, subvolume)
+    # We have to check which snapshots are available in the source
+    # repository as well as the destination repository. These can be
+    # used as parents for the incremental transfer. If none exists on
+    # the destination side, we have to send the latest snapshot in its
+    # entirety (i.e., the entire subvolume).
+    parents = _findCommonSnapshots(snapshots, dst_snapshots)
+    # Convert the snapshot list to paths relative to the source repository.
+    parents = list(map(lambda x: self.path(x["path"]), parents))
+    return parents
 
 
-  def command(self, function, *args, **kwargs):
-    """Create a command."""
-    command = function(*args, **kwargs)
-    return (self._remote_cmd if self._remote_cmd else []) + command
-
-
-  def pipeline(self, send, function, *args, **kwargs):
+  def _pipeline(self, send, function, *args, **kwargs):
     """Create a command pipeline that includes all user supplied filters."""
     command = self.command(function, *args, **kwargs)
     # We assume the filters are already ordered according to the
@@ -647,18 +709,19 @@ class Repository:
       return (self._filters if self._filters else []) + [command]
 
 
+  def sendPipeline(self, snapshot, parents):
+    """Retrieve a pipeline of commands for sending the given snapshot."""
+    return self._pipeline(True, serialize, self.path(snapshot), parents)
+
+
+  def recvPipeline(self, _):
+    """Retrieve a pipeline of commands for receiving the given snapshot."""
+    return self._pipeline(False, deserialize, self.path())
+
+
   @property
   def root(self):
     """Retrieve the root directory of the btrfs file system the repository resides on."""
     return self._root
 
 
-  @property
-  def readStderr(self):
-    """Check whether or not to read data from stderr when executing a command."""
-    # Note that for the simple reason that we run into issues where to
-    # repositories are involved in a single command execution, having
-    # this property per-repository is not the best idea. However, it was
-    # deemed the most usable one because introducing another abstraction
-    # just for command execution would bloat the code unnecessarily.
-    return self._read_err
