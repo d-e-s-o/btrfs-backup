@@ -63,9 +63,7 @@ def version():
   return "0.1"
 
 
-def run(method, subvolumes, src_repo, dst_repo,
-        send_filters=None, recv_filters=None, read_err=True,
-        remote_cmd=None, debug=False, **kwargs):
+def run(method, subvolumes, src_repo, dst_repo, debug=False, **kwargs):
   """Start actual execution."""
   try:
     # This import pulls in all required modules and we check for
@@ -78,19 +76,8 @@ def run(method, subvolumes, src_repo, dst_repo,
     print("A command was not found:\n\"%s\"" % e, file=stderr)
     return 1
 
-  if remote_cmd:
-    # TODO: Right now we do not support remote commands that contain
-    #       spaces in their path. E.g., "/bin/connect to server" would
-    #       not be a valid command.
-    remote_cmd = remote_cmd.split()
-  if send_filters:
-    send_filters = [filt.split() for filt in send_filters]
-  if recv_filters:
-    recv_filters = [filt.split() for filt in recv_filters]
-
   try:
-    program = Program(subvolumes, src_repo, dst_repo, send_filters,
-                      recv_filters, read_err, remote_cmd)
+    program = Program(subvolumes, src_repo, dst_repo)
     method(program)(**kwargs)
     return 0
   except ChildProcessError as e:
@@ -358,6 +345,47 @@ class SubLevelHelpFormatter(HelpFormatter):
     super().add_usage(usage, actions, groups, "Usage: ")
 
 
+def prepareNamespace(ns):
+  """Prepare the given namespace object for conversion into dict."""
+  command = ns.command
+  src_repo = ns.src
+  dst_repo = ns.dst
+  remote_cmd = ns.remote_cmd
+
+  # The namespace's appended list arguments are stored as a list of
+  # list of strings. Convert each to a list of strings.
+  subvolumes = [x for x, in ns.subvolumes]
+  send_filters = [x for x, in ns.send_filters] if ns.send_filters else None
+  recv_filters = [x for x, in ns.recv_filters] if ns.recv_filters else None
+
+  if remote_cmd:
+    # TODO: Right now we do not support remote commands that contain
+    #       spaces in their path. E.g., "/bin/connect to server" would
+    #       not be a valid command.
+    remote_cmd = remote_cmd.split()
+  if send_filters:
+    send_filters = [filt.split() for filt in send_filters]
+  if recv_filters:
+    recv_filters = [filt.split() for filt in recv_filters]
+
+  ns.recv_filters = recv_filters
+  ns.send_filters = send_filters
+  ns.remote_cmd = remote_cmd
+
+  # Remove all positional and already processed or otherwise handled
+  # attributes from the namespace object. This way we can directly
+  # convert it into a dict and pass in all remaining properties as
+  # keyword arguments subsequently.
+  del ns.subvolumes
+  del ns.src
+  del ns.dst
+  del ns.command
+  del ns.reverse
+  del ns.reverse_hidden_helper
+
+  return command, subvolumes, src_repo, dst_repo
+
+
 def main(argv):
   """The main function parses the program arguments and reacts on them."""
   # We need access to the namespace object that parse_args() works on.
@@ -398,30 +426,16 @@ def main(argv):
   parser.parse_args(args, namespace)
 
   with alias(namespace) as ns:
-    # The namespace's appended list arguments are stored as a list of
-    # list of strings. Convert each to a list of strings.
-    subvolumes = [x for x, in ns.subvolumes]
-    send_filters = [x for x, in ns.send_filters] if ns.send_filters else None
-    recv_filters = [x for x, in ns.recv_filters] if ns.recv_filters else None
+    command, subvolumes, src_repo, dst_repo = prepareNamespace(ns)
 
-    if ns.command == "backup":
-      return run(lambda x: x.backup, subvolumes, ns.src, ns.dst,
-                 send_filters=send_filters,
-                 recv_filters=recv_filters,
-                 read_err=ns.read_err,
-                 remote_cmd=ns.remote_cmd,
-                 keep_for=ns.keep_for,
-                 debug=ns.debug)
-    elif ns.command == "restore":
-      return run(lambda x: x.restore, subvolumes, ns.src, ns.dst,
-                 send_filters=send_filters,
-                 recv_filters=recv_filters,
-                 read_err=ns.read_err,
-                 remote_cmd=ns.remote_cmd,
-                 snapshots_only=ns.snapshots_only,
-                 debug=ns.debug)
+    if command == "backup":
+      method = lambda x: x.backup
+    elif command == "restore":
+      method = lambda x: x.restore
     else:
       assert False
+
+    return run(method, subvolumes, src_repo, dst_repo, **vars(ns))
 
 
 if __name__ == "__main__":

@@ -28,21 +28,28 @@ from deso.btrfs.repository import (
 
 class Program:
   """A program object performs the actual work of synchronizing two repositories."""
-  def __init__(self, subvolumes, src_repo, dst_repo, send_filters=None,
-               recv_filters=None, read_err=True, remote_cmd=None):
+  def __init__(self, subvolumes, src_repo, dst_repo):
     """Create a new Program object using the given subvolumes and repositories."""
     self._subvolumes = subvolumes
-    self._src_repo = Repository(src_repo, send_filters, read_err)
-    self._dst_repo = Repository(dst_repo, recv_filters, read_err, remote_cmd)
+    self._src_repo = src_repo
+    self._dst_repo = dst_repo
 
 
-  def backup(self, keep_for=None):
+  def backup(self, send_filters=None, recv_filters=None, read_err=True,
+             remote_cmd=None, extension=None, keep_for=None):
     """Backup subvolumes to a repository."""
-    sync(self._subvolumes, self._src_repo, self._dst_repo)
+    src = Repository(self._src_repo, send_filters, read_err)
+    dst = Repository(self._dst_repo, recv_filters, read_err, remote_cmd)
+
+    sync(self._subvolumes, src, dst)
     if keep_for:
-      self._src_repo.purge(self._subvolumes, keep_for)
+      src.purge(self._subvolumes, keep_for)
 
 
-  def restore(self, snapshots_only=False):
+  def restore(self, send_filters=None, recv_filters=None, read_err=True,
+              remote_cmd=None, extension=None, snapshots_only=False):
     """Restore subvolumes or snapshots from a repository."""
-    restore_(self._subvolumes, self._src_repo, self._dst_repo, snapshots_only)
+    src = Repository(self._src_repo, send_filters, read_err, remote_cmd)
+    dst = Repository(self._dst_repo, recv_filters, read_err)
+
+    restore_(self._subvolumes, src, dst, snapshots_only)
