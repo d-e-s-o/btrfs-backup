@@ -35,6 +35,7 @@ from deso.btrfs.command import (
   sync,
 )
 from deso.btrfs.repository import (
+  FileRepository,
   Repository,
   restore,
   _findCommonSnapshots,
@@ -72,6 +73,7 @@ from unittest.mock import (
 )
 
 
+_DD = findCommand("dd")
 _GZIP = findCommand("gzip")
 _BZIP = findCommand("bzip2")
 
@@ -91,6 +93,43 @@ class TestRepositoryBase(BtrfsTestCase):
     """Verify that if no snapshot is present an empty list is returned."""
     repo = Repository(self._mount.path())
     self.assertEqual(repo.snapshots(), [])
+
+
+  def testFileRepositoryListNoSnapshotPresent(self):
+    """Verify that if no snapshot file is present an empty list is returned."""
+    repo = FileRepository(self._mount.path(), ".bin")
+    self.assertEqual(repo.snapshots(), [])
+
+
+  def testFileRepositoryListWithIncorrectlyNamedSnapshotFiles(self):
+    """Verify that snapshot files not matching the snapshot naming pattern are not listed."""
+    with alias(self._mount) as m:
+      make(m, "file1.bin", data=b"")
+      make(m, "snapshot-2015-02-06_00:33:57.bin", data=b"")
+
+      repo = FileRepository(m.path(), ".bin")
+      self.assertEqual(repo.snapshots(), [])
+
+
+  def testFileRepositoryListWithSnapshotFiles(self):
+    """Verify that properly named snapshot files are correctly listed."""
+    with patch("deso.btrfs.repository.uname") as mock_uname:
+      mock_uname.return_value.nodename = "localhost"
+      mock_uname.return_value.sysname = "linux"
+      mock_uname.return_value.machine = "x86_64"
+
+      with alias(self._mount) as m:
+        ext = ".bin"
+        name = "localhost-linux-x86_64-local-2015-02-06_00:35:15"
+        make(m, "%s%s" % (name, ext), data=b"")
+
+        repo = FileRepository(m.path(), ext)
+        self.assertEqual(repo.snapshots(), [{"path": name}])
+
+        # Verify that numbered snapshots are recognized as well.
+        make(m, "%s-1%s" % (name, ext), data=b"")
+        expected = [{"path": name}, {"path": "%s-1" % name}]
+        self.assertEqual(repo.snapshots(), expected)
 
 
   def testRepositorySubvolumeFindRootOnRoot(self):
@@ -371,17 +410,14 @@ class TestBtrfsSync(BtrfsTestCase):
       self.assertEqual(glob(join(backup, "*")), [])
 
 
-  def testRepositorySync(self):
-    """Test that we can sync a single subvolume between two repositories."""
+  def repositorySyncSequence(self, src, dst):
+    """Perform a sequence of syncs between two repositories."""
     with patch("deso.btrfs.repository.datetime", wraps=datetime) as mock_now:
       with alias(self._mount) as m:
         mock_now.now.return_value = datetime(2015, 1, 5, 22, 34)
 
         make(m, "root", subvol=True)
         make(m, "root", "dir", "file", data=b"")
-
-        src = Repository(make(m, "repo1"))
-        dst = Repository(make(m, "repo2"))
 
         # Case 1) Sync repositories initially. A snapshot should be taken
         #         in the source repository and transferred to the remote
@@ -447,6 +483,26 @@ class TestBtrfsSync(BtrfsTestCase):
 
         _, _, _, snap1_4 = src.snapshots()
         self.assertRegex(snap1_4["path"], "root-2015-01-05_22:35:00-2")
+
+
+  def testRepositorySync(self):
+    """Test that we can sync a single subvolume between two repositories."""
+    with alias(self._mount) as m:
+      src = Repository(make(m, "repo1"))
+      dst = Repository(make(m, "repo2"))
+
+      self.repositorySyncSequence(src, dst)
+
+
+  def testFileRepositorySync(self):
+    """Test that we can sync a single subvolume between a normal and a file repository."""
+    with alias(self._mount) as m:
+      recv_filter = [[_DD, "of={file}"]]
+
+      src = Repository(make(m, "repo1"))
+      dst = FileRepository(make(m, "backup"), ".bin", recv_filter)
+
+      self.repositorySyncSequence(src, dst)
 
 
   def testRepositoryMultipleSubvolumeSync(self):
@@ -549,18 +605,13 @@ class TestBtrfsSync(BtrfsTestCase):
         restore([m.path("home", "user1")], dst, src)
 
 
-  def testRepositorySyncAndRestore(self):
-    """Test restoring a snapshot after it was backed up."""
+  def syncAndRestoreSequence(self, createRepos):
+    """Perform a sync and restore cycle between two repositories."""
     with alias(self._mount) as m:
       make(m, "home", "user", subvol=True)
       make(m, "home", "user", "test-dir", "test", data=b"test-content")
 
-      snaps = make(m, "snapshots")
-      backup = make(m, "backup")
-
-      src = Repository(snaps)
-      dst = Repository(backup)
-
+      src, dst = createRepos(True)
       syncRepos([m.path("home", "user")], src, dst)
 
       snap, = src.snapshots()
@@ -568,13 +619,48 @@ class TestBtrfsSync(BtrfsTestCase):
       execute(*delete(src.path(snap["path"])))
 
       self.assertEqual(src.snapshots(), [])
-      self.assertEqual(glob(join(snaps, "*")), [])
+      self.assertEqual(glob(src.path("*")), [])
 
-      restore([m.path("home", "user")], dst, src, snapshots_only=True)
+      src, dst = createRepos(False)
+      restore([m.path("home", "user")], src, dst, snapshots_only=True)
 
       snap, = src.snapshots()
       file_ = src.path(snap["path"], "test-dir", "test")
       self.assertContains(file_, "test-content")
+
+
+  def testRepositorySyncAndRestore(self):
+    """Test restoring a snapshot from a native repository."""
+    def createRepos(backup):
+      """Create two normal repositories."""
+      with alias(self._mount) as m:
+        src = Repository(make(m, "snapshots"))
+        dst = Repository(make(m, "backup"))
+
+        return (src, dst) if backup else (dst, src)
+
+    self.syncAndRestoreSequence(createRepos)
+
+
+  def testFileRepositorySyncAndRestore(self):
+    """Test restoring a snapshot from a file repository."""
+    def createRepos(backup):
+      """Create a normal and a file repository."""
+      with alias(self._mount) as m:
+        if backup:
+          recv_filter = [[_DD, "of={file}"]]
+
+          src = Repository(make(m, "snapshots"))
+          dst = FileRepository(make(m, "backup"), ".bin", recv_filter)
+        else:
+          send_filter = [[_DD, "if={file}"]]
+
+          src = FileRepository(make(m, "backup"), ".bin", send_filter)
+          dst = Repository(make(m, "backup"))
+
+        return src, dst
+
+    self.syncAndRestoreSequence(createRepos)
 
 
   def testRepositoryRestorePlainWithAndWithoutFilters(self):

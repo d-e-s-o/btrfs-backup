@@ -25,6 +25,9 @@
   contain snapshots.
 """
 
+from copy import (
+  deepcopy,
+)
 from datetime import (
   datetime,
 )
@@ -43,6 +46,7 @@ from deso.btrfs.command import (
 )
 from deso.execute import (
   execute,
+  formatPipeline,
   pipeline,
 )
 from os import (
@@ -70,7 +74,9 @@ from re import (
 # property has to hold for all possible locales (even if Python does not
 # include locales in their sorting, btrfs might, whose sorted output we
 # parse).
-_TIME_FORMAT = "%Y-%m-%d_%H:%M:%S"
+_TIME_FORMAT_RAW = "{}-{}-{}_{}:{}:{}"
+_TIME_FORMAT = _TIME_FORMAT_RAW.format("%Y", "%m", "%d", "%H", "%M", "%S")
+_TIME_FORMAT_REGEX = _TIME_FORMAT_RAW.replace("{}", "....", 1).replace("{}", "..")
 _ANY_STRING = r"."
 _NUM_STRING = r"[0-9]"
 _NUMS_STRING = r"{nr}+".format(nr=_NUM_STRING)
@@ -149,9 +155,63 @@ def _snapshots(repository):
   return [_parseListLine(line) for line in output]
 
 
+def _snapshotFiles(directory, extension, repository):
+  """Retrieve a list of snapshot files in a given directory."""
+  base = _snapshotBaseName(None)
+  time = _TIME_FORMAT_REGEX
+  # Mind the asterisk between the time and the extension. It is required
+  # because we can have snapshots with equal time stamps which are then
+  # numbered in an increasing fashion.
+  expression = regex(r"^%s-.*-%s.*%s$" % (base, time, extension))
+
+  # We have to rely on the '-v' parameter here to get a properly sorted
+  # list and '-1' to display one file per line. We should not have to
+  # use --color=never since coloring should not be applied here since
+  # everything is non-interactive.
+  cmd = repository.command(lambda: ["/bin/ls", "-v1", directory])
+  out, _ = execute(*cmd, read_out=True, read_err=repository.readStderr)
+  out = out.decode("utf-8")[:-1].split("\n")
+
+  # In general we assume that the repository's directory does not
+  # contain any user created files with which we could interfere.
+  # However, we also try a little bit to filter out most files that
+  # cannot possibly be snapshots because their naming scheme does not
+  # match.
+  files = []
+  for f in out:
+    m = expression.match(f)
+    if m:
+      files.append({"path": join(directory, f[:-len(extension)])})
+
+  # We got a list of file names. However, our snapshot format is that of
+  # a dict containing a 'path' key. Note that since we are unable to
+  # interpret the format of arbitrary files (a filter is free to store
+  # snapshots in any format), we have no chance of retrieving a
+  # generation number here as is done for "native" snapshots.
+  return files
+
+
 def _isRoot(directory, repository):
   """Check if a given directory represents the root of a btrfs file system."""
-  if not isdir(directory):
+  def isDir(directory):
+    """Check if a directory exists."""
+    try:
+      # Append a trailing separator here to indicate that we are
+      # checking for a directory. This way ls will fail if it is not. If
+      # we left out the trailing separator and the directory actually
+      # points to a file, ls would still succeed.
+      func = lambda: ["/bin/ls", _trail(directory)]
+      cmd = repository.command(func)
+
+      execute(*cmd, read_err=repository.readStderr)
+      return True
+    except ChildProcessError:
+      return False
+
+  # TODO: We might want to move this invocation into _findRoot to avoid
+  #       unnecessary invocations, especially since they might be
+  #       remote.
+  if not isDir(directory):
     raise FileNotFoundError("Directory \"%s\" not found." % directory)
 
   try:
@@ -203,15 +263,18 @@ def _snapshotBaseName(subvolume):
     information encoded in it and does not depend on data variable over
     time.
   """
-  assert subvolume == realpath(subvolume)
+  assert subvolume is None or subvolume == realpath(subvolume)
 
   r = uname()
   name = "%s-%s-%s" % (r.nodename, r.sysname.lower(), r.machine)
-  # Remove any leading or trailing directory separators and then replace
-  # the ones in the middle with underscores to make names look less
-  # confusing.
-  path = subvolume.strip(sep).replace(sep, "_")
-  return "%s-%s" % (name, path)
+  if subvolume:
+    # Remove any leading or trailing directory separators and then replace
+    # the ones in the middle with underscores to make names look less
+    # confusing.
+    path = subvolume.strip(sep).replace(sep, "_")
+    return "%s-%s" % (name, path)
+  else:
+    return name
 
 
 def _ensureUniqueName(snapshot, snapshots):
@@ -725,3 +788,100 @@ class Repository(RepositoryBase):
     return self._root
 
 
+class FileRepository(RepositoryBase):
+  """A repository comprising snapshot files with a given extension.
+
+    Note that compared to "normal" repositories, i.e., objects of type
+    Repository, file repositories are more restricted in their usage.
+    Because they do not necessarily have to reside on an actual btrfs
+    volume, creation of "real" snapshots and subvolumes is not possible.
+    To that end, file repositories must not be used as source
+    repositories in a sync operation and not as destination repositories
+    in restores.
+  """
+  def __init__(self, directory, extension, *args, **kwargs):
+    """Initialize the repository."""
+    super().__init__(directory, *args, **kwargs)
+    self._extension = extension
+
+
+  def snapshots(self):
+    """Retrieve a list of snapshot files in this repository.
+
+      Note: Reasoning about snapshots always happens without the
+            extension. That is, the paths of the snapshots returned from
+            this function will not contain the extension.
+    """
+    snapshots = _snapshotFiles(self._directory, self._extension, self)
+    snapshots = _makeRelative(snapshots, self._directory)
+    return snapshots
+
+
+  def parents(self, snapshot, subvolume, snapshots=None, dst_snapshots=None):
+    """Retrieve a list of parent snapshots for the given snapshot of the supplied subvolume."""
+    assert snapshots is not None
+
+    snapshots = _findSnapshotsForSubvolume(snapshots, subvolume)
+    # TODO: This method is not yet complete. We need to include only
+    #       those snapshots that are true parents of the given one. That
+    #       is, we have to stop at the last full snapshot.
+    snapshots = filter(lambda x: x["path"] != snapshot, snapshots)
+    return list(map(lambda x: self.path(x["path"]), snapshots))
+
+
+  def _filterPipeline(self, index, snapshots):
+    """Create a pipeline out of the filter commands."""
+    def replaceFiles(command, snapshots):
+      """Replace the {file} string in a command with the actual snapshot name."""
+      # TODO: This method replicates the argument that contains the
+      #       {file} string to allow not only for lists of snapshot
+      #       files in a consecutive fashion (i.e., "/bin/cat {file}"
+      #       is expanded to "/bin/cat file1 file2 ...") but also
+      #       for multiple options ("/bin/dd if={file}" is expanded to
+      #       "/bin/dd if=file1 if=file2 ...". However, because of the
+      #       one argument assumption, this function cannot handle short
+      #       options where there is a space between the argument and
+      #       its parameter since they would appear as different
+      #       arguments altogether (that is, "/bin/tar -f {file}" would
+      #       be supplied as ['/bin/tar', '-f', '{file}'] and the fact
+      #       that the {file} string belongs to the -f option is lost to
+      #       the function. As of now this limitation is not a problem
+      #       because of a lack of programs using this style of
+      #       argument passing. It might become one, though.
+      for i, arg in enumerate(command):
+        # Check if the argument contains the replacement string {file}.
+        # If it does, then replicate it for each snapshot while
+        # replacing the string with its actual name.
+        if "{file}" in arg:
+          # Replace the current argument with the list of arguments with
+          # all the snapshot names.
+          command[i:i+1] = [arg.format(file=s) for s in snapshots]
+          return command
+
+      error = "Replacement string {{file}} not found in command: \"{cmd}\""
+      error = error.format(cmd=formatPipeline([command]))
+      raise NameError(error)
+
+    # Convert all relative snapshot paths into absolute ones with the
+    # appropriate extension.
+    with alias(self._extension) as ext:
+      snapshots = ["%s%s" % (self.path(s), ext) for s in snapshots]
+
+    commands = deepcopy(self._filters)
+    func = lambda: replaceFiles(commands[index], snapshots)
+    # At least one command in the filters must contain a string {file}
+    # which is now replaced by the actual snapshot name.
+    commands[index] = self.command(func)
+    return commands
+
+
+  def sendPipeline(self, snapshot, parents):
+    """Retrieve a pipeline of commands for sending the given snapshot."""
+    # The given snapshot is the most recent one so it has to be listed
+    # last.
+    return self._filterPipeline(0, parents + [snapshot])
+
+
+  def recvPipeline(self, snapshot):
+    """Retrieve a pipeline of commands for receiving the given snapshot."""
+    return self._filterPipeline(-1, [snapshot])

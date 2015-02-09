@@ -20,6 +20,7 @@
 """The program module wraps Repository functionality for easy access from the main module."""
 
 from deso.btrfs.repository import (
+  FileRepository,
   Repository,
   restore as restore_,
   sync,
@@ -39,7 +40,11 @@ class Program:
              remote_cmd=None, extension=None, keep_for=None):
     """Backup subvolumes to a repository."""
     src = Repository(self._src_repo, send_filters, read_err)
-    dst = Repository(self._dst_repo, recv_filters, read_err, remote_cmd)
+    if extension:
+      dst = FileRepository(self._dst_repo, extension, recv_filters,
+                           read_err, remote_cmd)
+    else:
+      dst = Repository(self._dst_repo, recv_filters, read_err, remote_cmd)
 
     sync(self._subvolumes, src, dst)
     if keep_for:
@@ -49,7 +54,12 @@ class Program:
   def restore(self, send_filters=None, recv_filters=None, read_err=True,
               remote_cmd=None, extension=None, snapshots_only=False):
     """Restore subvolumes or snapshots from a repository."""
-    src = Repository(self._src_repo, send_filters, read_err, remote_cmd)
+    if extension:
+      src = FileRepository(self._src_repo, extension, send_filters,
+                           read_err, remote_cmd)
+    else:
+      src = Repository(self._src_repo, send_filters, read_err, remote_cmd)
+
     dst = Repository(self._dst_repo, recv_filters, read_err)
 
     restore_(self._subvolumes, src, dst, snapshots_only)

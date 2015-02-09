@@ -15,13 +15,16 @@ that is, only if new data is detected to be available on the respective
 subvolume a new snapshot is taken.
 
 The program reasons in terms of repositories. A repository is a
-directory on a btrfs system which is used to contain the newly created
-as well as already available snapshots. In terms of backup there are two
-repositories involved: a source repository and a destination repository.
-These repositories are kept in sync by performing an incremental
-transfer of the files of a snapshot from the source to the destination.
-On the destination repository, the snapshot will subsequently be
-remanifested.
+directory which is used to contain the newly created as well as already
+available snapshots. Usually, this directory would be on another btrfs
+file system but btrfs-backup also supports backup to and restoration
+from non-btrfs file systems.
+
+In terms of backup there are two repositories involved: a source
+repository and a destination repository. These repositories are kept in
+sync by performing an incremental transfer of the files of a snapshot
+from the source to the destination. On the destination repository, the
+snapshot will subsequently be remanifested or stored in a file.
 
 
 Examples
@@ -161,6 +164,47 @@ to be reordered for the restore case unless the --reverse option
 (explained above) is used.
 Lastly, note that filtering can be combined with remote command
 execution as one would naively expect.
+
+###Snapshot Files
+Although a subvolume from a btrfs file system is to be backed up, the
+file system where the data is stored does not necessarily have to be a
+btrfs file system. btrfs-backup supports the notion of file
+repositories. Just like ordinary repositories, they contain the backed
+up data of a btrfs subvolume or snapshot that can be used to restore the
+original subvolume. However, file repositories do not contain the
+remanifested subvolume but rather a binary blob of data. This property
+is their biggest advantage since it opens up the possibility for
+end-to-end encryption: the data can be encrypted at the source (where
+the subvolume to back up resides) and be sent to and stored at the
+destination in the form of a file.
+
+Snapshot files are identified by an extension. As usual, such an
+extension helps identify the content. The extension can be specified
+by means of the --snapshot-ext option. This option also tells
+btrfs-backup that the backup should be performed to a file repository.
+If it is specified, btrfs-backup requires the usage of a send and
+receiver filter, for the restore and backup case, respectively. The
+receive filter needs to read data from a file whereas the send filter
+needs to write into a file. In order to convey the actual file name to
+the filter, the user has to include a special string, "{file}" (without
+the quotation marks), in the first send filter and the last receive
+filter. Subsequently, btrfs-backup will replace this string with the
+actual file name and invoke the filter command.
+
+An example invocation to create a backup could look like this:
+
+$ btrfs-backup backup --snapshot-ext='bin'
+                      --recv-filter='/bin/dd of={file}'
+                      --subvolume=subvolume/ snapshots/ backup/
+
+Instead of remanifesting the subvolume in the backup/ folder, the data
+is dumped into a .bin file.
+
+Similarly, data could be restored using:
+
+$ btrfs-backup restore --snapshot-ext='bin'
+                       --send-filter='/bin/dd if={file}'
+                       --subvolume=subvolume/ backup/ snapshots/
 
 [1] For the technically interested person: the reason the program
     appears stalled is because in order to provide reasonable error
