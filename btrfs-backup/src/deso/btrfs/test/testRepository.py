@@ -41,6 +41,8 @@ from deso.btrfs.repository import (
   _findCommonSnapshots,
   _snapshots,
   sync as syncRepos,
+  _trail,
+  _untrail,
 )
 from deso.btrfs.test.btrfsTest import (
   BtrfsDevice,
@@ -80,6 +82,20 @@ _BZIP = findCommand("bzip2")
 
 class TestRepositoryBase(BtrfsTestCase):
   """Test basic repository functionality."""
+  def testPathTrail(self):
+    """Verify that terminating a path by a separator works as expected."""
+    self.assertEqual(_trail("/"), "/")
+    self.assertEqual(_trail("/home/user"), "/home/user/")
+    self.assertEqual(_trail("/home/user/"), "/home/user/")
+
+
+  def testPathUntrail(self):
+    """Verify that removing a trailing separator from a path works as expected."""
+    self.assertEqual(_untrail("/"), "/")
+    self.assertEqual(_untrail("/home/user"), "/home/user")
+    self.assertEqual(_untrail("/home/user/"), "/home/user")
+
+
   def testRepositoryInNonExistentDirectory(self):
     """Verify that creation of a repository in a non-existent directory fails."""
     directory = "a-non-existent-directory"

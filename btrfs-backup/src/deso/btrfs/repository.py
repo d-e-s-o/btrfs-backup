@@ -611,6 +611,14 @@ def _trail(path):
   return join(path, "")
 
 
+def _untrail(path):
+  """Ensure the path has no trailing separator."""
+  if path != sep:
+    return _trail(path)[:-1]
+  else:
+    return path
+
+
 class RepositoryBase:
   """This class represents the base class for repositories for snapshots."""
   def __init__(self, directory, filters=None, read_err=True,
