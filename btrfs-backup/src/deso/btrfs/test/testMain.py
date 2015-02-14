@@ -94,7 +94,7 @@ class TestMain(BtrfsTestCase):
     """Verify that the help contains an uppercase 'Usage:' string."""
     def runMain(*args):
       """Run the program and read the output it produces."""
-      stdout, _ = execute(executable, "-m", "deso.btrfs.main", *args, read_out=True)
+      stdout, _ = execute(executable, "-m", "deso.btrfs.main", *args, stdout=b"")
       stdout = stdout.decode("utf-8")
       return stdout
 

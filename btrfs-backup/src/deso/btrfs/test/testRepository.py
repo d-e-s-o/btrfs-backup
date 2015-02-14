@@ -253,10 +253,10 @@ class TestRepositoryBase(BtrfsTestCase):
         # Serialize the given snapshot but read the data into a Python
         # object to determine the length of the byte stream.
         data, _ = execute(*serialize(snapshot, [parent] if parent else None),
-                          read_out=True)
+                          stdout=b"")
         size = len(data)
         # Now form back the snapshot out of the intermediate byte stream.
-        execute(*deserialize(m.path("sent")), data_in=data)
+        execute(*deserialize(m.path("sent")), stdin=data)
         return size
 
     with alias(self._mount) as m:

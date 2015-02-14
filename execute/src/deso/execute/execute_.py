@@ -48,15 +48,15 @@ from select import (
   poll,
 )
 from sys import (
-  stderr,
-  stdin,
-  stdout,
+  stderr as stderr_,
+  stdin as stdin_,
+  stdout as stdout_,
 )
 
 
-def execute(*args, data_in=None, read_out=False, read_err=True):
+def execute(*args, stdin=None, stdout=None, stderr=b""):
   """Execute a program synchronously."""
-  return pipeline([args], data_in, read_out, read_err)
+  return pipeline([args], stdin, stdout, stderr)
 
 
 def _pipeline(commands, fd_in, fd_out, fd_err):
@@ -77,24 +77,24 @@ def _pipeline(commands, fd_in, fd_out, fd_err):
     if child:
       if not first:
         # Establish communication channel with previous process.
-        dup2(fd_in_old, stdin.fileno())
+        dup2(fd_in_old, stdin_.fileno())
         close_(fd_in_old)
         close_(fd_out_old)
       else:
-        dup2(fd_in, stdin.fileno())
+        dup2(fd_in, stdin_.fileno())
 
       if not last:
         # Establish communication channel with next process.
         close_(fd_in_new)
-        dup2(fd_out_new, stdout.fileno())
+        dup2(fd_out_new, stdout_.fileno())
         close_(fd_out_new)
       else:
-        dup2(fd_out, stdout.fileno())
+        dup2(fd_out, stdout_.fileno())
 
       # Stderr is redirected for all commands in the pipeline because each
       # process' output should be rerouted and stderr is not affected by
       # the pipe between the processes in any way.
-      dup2(fd_err, stderr.fileno())
+      dup2(fd_err, stderr_.fileno())
 
       execl(command[0], *command)
       # This statement should never be reached: either exec fails in
@@ -209,25 +209,25 @@ def eventToString(events):
 
 class _PipelineFileDescriptors:
   """This class manages file descriptors for use with any pipeline of commands."""
-  def __init__(self, later, here, data_in, read_out, read_err):
+  def __init__(self, later, here, stdin, stdout, stderr):
     """Initialize the pipe infrastructure on demand."""
     # We got two defer objects here. So here is how it works: Some of
     # the resources should be freed latest after the pipeline finished
     # its work. That is what 'here' is for. Others need to be freed
     # later (by 'later'), think the file descriptors we need to poll.
-    def pipeWrite(setup, data):
-      """Conditionally setup a pipe for writing data."""
-      if setup:
-        data["in"], data["out"] = pipe2(O_CLOEXEC)
-        data["close"] = later.defer(lambda: close_(data["out"]))
-        here.defer(lambda: close_(data["in"]))
+    def pipeWrite(argument, data):
+      """Setup a pipe for writing data."""
+      data["in"], data["out"] = pipe2(O_CLOEXEC)
+      data["data"] = argument
+      data["close"] = later.defer(lambda: close_(data["out"]))
+      here.defer(lambda: close_(data["in"]))
 
-    def pipeRead(setup, data):
-      """Conditionally setup a pipe for reading data."""
-      if setup:
-        data["in"], data["out"] = pipe2(O_CLOEXEC)
-        data["close"] = later.defer(lambda: close_(data["in"]))
-        here.defer(lambda: close_(data["out"]))
+    def pipeRead(argument, data):
+      """Setup a pipe for reading data."""
+      data["in"], data["out"] = pipe2(O_CLOEXEC)
+      data["data"] = argument
+      data["close"] = later.defer(lambda: close_(data["in"]))
+      here.defer(lambda: close_(data["out"]))
 
     # We need three dict objects, each representing one of the available
     # data channels. Depending on whether the channel is actually used
@@ -236,25 +236,23 @@ class _PipelineFileDescriptors:
     self._stdout = {}
     self._stderr = {}
 
-    write_in = data_in is not None
-    # Also store the data itself to be able to deliver it to stdin.
-    if write_in:
-      self._stdin["data"] = data_in
+    # Now, depending on whether we got passed in a file descriptor (an
+    # object of type int), remember it or create a pipe to read or write
+    # data.
+    if isinstance(stdin, int):
+      self._file_in = stdin
+    else:
+      pipeWrite(stdin, self._stdin)
 
-    # We want to redirect all file descriptors that we do not want
-    # anything from to /dev/null. But we only want to open the latter in
-    # case someone really requires it, i.e., if not all three channels
-    # are connected to pipes anyway.
-    # TODO: We need to be able to support simply keeping the file
-    #       descriptors open as well.
-    if not (write_in and read_out and read_err):
-      self._null = open_(devnull, O_RDWR | O_CLOEXEC)
-      here.defer(lambda: close_(self._null))
+    if isinstance(stdout, int):
+      self._file_out = stdout
+    else:
+      pipeRead(stdout, self._stdout)
 
-    # Now we need to set up the pipes on-demand.
-    pipeWrite(write_in, self._stdin)
-    pipeRead(read_out, self._stdout)
-    pipeRead(read_err, self._stderr)
+    if isinstance(stderr, int):
+      self._file_err = stderr
+    else:
+      pipeRead(stderr, self._stderr)
 
 
   def poll(self):
@@ -269,7 +267,6 @@ class _PipelineFileDescriptors:
     def pollRead(data):
       """Conditionally set up polling for read events."""
       if data:
-        data["data"] = bytearray()
         poll_.register(data["in"], _IN)
         data["unreg"] = d.defer(lambda: poll_.unregister(data["in"]))
         polls[data["in"]] = data
@@ -343,28 +340,55 @@ class _PipelineFileDescriptors:
 
   def stdin(self):
     """Retrieve the stdin file descriptor ready to be handed to a process."""
-    return self._stdin["in"] if self._stdin else self._null
+    return self._stdin["in"] if self._stdin else self._file_in
 
 
   def stdout(self):
     """Retrieve the stdout file descriptor ready to be handed to a process."""
-    return self._stdout["out"] if self._stdout else self._null
+    return self._stdout["out"] if self._stdout else self._file_out
 
 
   def stderr(self):
     """Retrieve the stderr file descriptor ready to be handed to a process."""
-    return self._stderr["out"] if self._stderr else self._null
+    return self._stderr["out"] if self._stderr else self._file_err
 
 
-def pipeline(commands, data_in=None, read_out=False, read_err=True):
-  """Execute a pipeline, supplying the given data to stdin and reading from stdout & stderr."""
+def pipeline(commands, stdin=None, stdout=None, stderr=b""):
+  """Execute a pipeline, supplying the given data to stdin and reading from stdout & stderr.
+
+    This function executes a pipeline of commands and connects their
+    stdin and stdout file descriptors as desired. All keyword parameters
+    can be either None (in which case they get implicitly redirected
+    to/from a null device), a valid file descriptor, or some data. In
+    case data is given (which should be a byte-like object) it will be
+    fed into the standard input of the first command (in case of stdin)
+    or be used as the initial buffer content of data to read (stdout and
+    stderr) of the last command (which means all actually read data will
+    just be appended).
+  """
   with defer() as later:
     with defer() as here:
+      # We want to redirect all file descriptors that we do not want
+      # anything from to /dev/null. But we only want to open the latter
+      # in case someone really requires it, i.e., if not all three
+      # channels are connected to pipes or user-defined file descriptors
+      # anyway.
+      if stdin is None or stdout is None or stderr is None:
+        null = open_(devnull, O_RDWR | O_CLOEXEC)
+        here.defer(lambda: close_(null))
+
+      if stdin is None:
+        stdin = null
+      if stdout is None:
+        stdout = null
+      if stderr is None:
+        stderr = null
+
+      # At this point stdin, stdout, and stderr are all either a valid
+      # file descriptor (i.e., of type int) or some data.
+
       # Set up the file descriptors to pass to our execution pipeline.
-      # Whether or not to create pipes or use /dev/null depends on
-      # whether we want to read/write to stdin, stdout, and stderr,
-      # respectively.
-      fds = _PipelineFileDescriptors(later, here, data_in, read_out, read_err)
+      fds = _PipelineFileDescriptors(later, here, stdin, stdout, stderr)
 
       # Finally execute our pipeline and pass in the prepared file
       # descriptors to use.

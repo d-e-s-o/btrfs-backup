@@ -112,7 +112,7 @@ class LoopBackDevice:
   def __init__(self, size):
     """Create a new loop back device backed by a file of given size."""
     # We start with retrieving the path to a loop device.
-    dev, _ = execute(_LOSETUP, "-f", read_out=True)
+    dev, _ = execute(_LOSETUP, "-f", stdout=b"")
     # Now create a temporary file to use as loop device backing store.
     fd, path = mkstemp()
     try:

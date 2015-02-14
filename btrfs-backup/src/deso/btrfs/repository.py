@@ -146,7 +146,7 @@ def _snapshots(repository):
       snapshots() method instead.
   """
   cmd = repository.command(listSnapshots, repository.path())
-  output, _ = execute(*cmd, read_out=True, read_err=repository.readStderr)
+  output, _ = execute(*cmd, stdout=b"", stderr=repository.stderr)
   # We might retrieve an empty output if no snapshots were present. In
   # this case, just return early here.
   if not output:
@@ -172,7 +172,7 @@ def _snapshotFiles(directory, extension, repository):
   # use --color=never since coloring should not be applied here since
   # everything is non-interactive.
   cmd = repository.command(lambda: ["/bin/ls", "-v1", directory])
-  out, _ = execute(*cmd, read_out=True, read_err=repository.readStderr)
+  out, _ = execute(*cmd, stdout=b"", stderr=repository.stderr)
   out = out.decode("utf-8")[:-1].split("\n")
 
   # In general we assume that the repository's directory does not
@@ -206,7 +206,7 @@ def _isRoot(directory, repository):
       func = lambda: ["/bin/ls", _trail(directory)]
       cmd = repository.command(func)
 
-      execute(*cmd, read_err=repository.readStderr)
+      execute(*cmd, stderr=repository.stderr)
       return True
     except ChildProcessError:
       return False
@@ -219,7 +219,7 @@ def _isRoot(directory, repository):
 
   try:
     cmd = repository.command(show, directory)
-    output, _ = execute(*cmd, read_out=True, read_err=repository.readStderr)
+    output, _ = execute(*cmd, stdout=b"", stderr=repository.stderr)
     output = output.decode("utf-8")[:-1].split("\n")
 
     # The output of show() contains multiple lines in case the given
@@ -380,14 +380,14 @@ def _createSnapshot(subvolume, repository, snapshots):
   """Create a snapshot of the given subvolume in the given repository."""
   name = _snapshotName(subvolume, snapshots)
   cmd = repository.command(mkSnapshot, subvolume, repository.path(name))
-  execute(*cmd, read_err=repository.readStderr)
+  execute(*cmd, stderr=repository.stderr)
 
   # We create a snapshot and we (very likely) serialize it. So make sure
   # that it is persisted to disk. This step is performed here and not
   # before the actual deployment because here we are guaranteed to be
   # working on a "real" btrfs subvolume which we can sync.
   cmd = repository.command(syncFs, repository.root)
-  execute(*cmd, read_err=repository.readStderr)
+  execute(*cmd, stderr=repository.stderr)
   return name
 
 
@@ -457,13 +457,13 @@ def _deploy(snapshot, parent, src, dst, src_snaps, subvolume):
 
   # Only if both repositories agree that we should read data from
   # stderr we will do so.
-  read_err = src.readStderr and dst.readStderr
+  stderr = b"" if src.stderr is b"" and dst.stderr is b"" else None
   # Finally transfer the snapshot from the source repository to the
   # destination.
   src_cmds = src.sendPipeline(snapshot, parents)
   dst_cmds = dst.recvPipeline(snapshot)
 
-  pipeline(src_cmds + dst_cmds, read_err=read_err)
+  pipeline(src_cmds + dst_cmds, stderr=stderr)
 
 
 def _sync(subvolume, src, dst):
@@ -542,7 +542,7 @@ def _restore(subvolume, src, dst, snapshots, snapshots_only):
   # we can restore the actual subvolume from it (if desired).
   if not snapshots_only:
     cmd = dst.command(mkSnapshot, dst.path(snapshot), subvolume, writable=True)
-    execute(*cmd, read_err=dst.readStderr)
+    execute(*cmd, stderr=dst.stderr)
 
 
 def restore(subvolumes, src, dst, snapshots_only=False):
@@ -572,7 +572,7 @@ def _diff(snapshot, subvolume, repository):
   #       generation (I assume so, but it would be best to get
   #       confirmation).
   cmd = repository.command(diff, subvolume, generation)
-  output, _ = execute(*cmd, read_out=True, read_err=repository.readStderr)
+  output, _ = execute(*cmd, stdout=b"", stderr=repository.stderr)
   output = output.decode("utf-8")[:-1].split("\n")
   # The diff output usually is ended by a line such as:
   # "transid marker was" followed by a generation ID. We should ignore
@@ -604,7 +604,7 @@ def _purge(subvolume, repository, duration, snapshots):
     time = datetime.strptime(string, _TIME_FORMAT)
     if time + duration < now:
       cmd = repository.command(delete, repository.path(snapshot))
-      execute(*cmd, read_err=repository.readStderr)
+      execute(*cmd, stderr=repository.stderr)
 
 
 def _trail(path):
@@ -637,7 +637,7 @@ class RepositoryBase:
                remote_cmd=None):
     """Initialize the object and bind it to the given directory."""
     self._filters = filters
-    self._read_err = read_err
+    self._read_err = b"" if read_err else None
     self._remote_cmd = remote_cmd
     # In order to properly handle relative paths correctly we need them
     # to start with the system's indicator for the current directory.
@@ -685,8 +685,8 @@ class RepositoryBase:
 
 
   @property
-  def readStderr(self):
-    """Check whether or not to read data from stderr when executing a command."""
+  def stderr(self):
+    """Retrieve the value to use as stderr keyword parameter when using an execution function."""
     # Note that for the simple reason that we run into issues where to
     # repositories are involved in a single command execution, having
     # this property per-repository is not the best idea. However, it was

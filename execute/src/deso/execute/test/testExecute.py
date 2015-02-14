@@ -42,8 +42,15 @@ from select import (
   POLLOUT,
   POLLPRI,
 )
+from sys import (
+  executable,
+)
 from tempfile import (
   mktemp,
+  TemporaryFile,
+)
+from textwrap import (
+  dedent,
 )
 from unittest import (
   TestCase,
@@ -60,18 +67,14 @@ _TR = findCommand("tr")
 _DD = findCommand("dd")
 
 
-def execute(*args, data_in=None, read_out=False, read_err=False):
+def execute(*args, stdin=None, stdout=None, stderr=None):
   """Run a program with reading from stderr disabled by default."""
-  return execute_(*args, data_in=data_in,
-                         read_out=read_out,
-                         read_err=read_err)
+  return execute_(*args, stdin=stdin, stdout=stdout, stderr=stderr)
 
 
-def pipeline(commands, data_in=None, read_out=False, read_err=False):
+def pipeline(commands, stdin=None, stdout=None, stderr=None):
   """Run a pipeline with reading from stderr disabled by default."""
-  return pipeline_(commands, data_in=data_in,
-                             read_out=read_out,
-                             read_err=read_err)
+  return pipeline_(commands, stdin=stdin, stdout=stdout, stderr=stderr)
 
 
 class TestExecute(TestCase):
@@ -108,32 +111,63 @@ class TestExecute(TestCase):
 
   def testExecuteAndNoOutput(self):
     """Test command execution and output retrieval for empty output."""
-    output, _ = execute(_TRUE, read_out=True)
+    output, _ = execute(_TRUE, stdout=b"")
     self.assertEqual(output, b"")
 
 
   def testExecuteAndOutput(self):
     """Test command execution and output retrieval."""
-    output, _ = execute(_ECHO, "success", read_out=True)
+    output, _ = execute(_ECHO, "success", stdout=b"")
     self.assertEqual(output, b"success\n")
+
+
+  def testExecuteAndRedirectInput(self):
+    """Test command execution and input redirection."""
+    with TemporaryFile() as file_:
+      file_.write(b"success")
+      file_.seek(0)
+
+      out, _ = execute(_CAT, stdin=file_.fileno(), stdout=b"")
+      self.assertEqual(out, b"success")
+
+
+  def testExecuteAndRedirectOutput(self):
+    """Test command execution and output redirection."""
+    with TemporaryFile() as file_:
+      execute(_ECHO, "success", stdout=file_.fileno())
+      file_.seek(0)
+      self.assertEqual(file_.read(), b"success\n")
+
+
+  def testExecuteAndRedirectError(self):
+    """Test command execution and error redirection."""
+    path = mktemp()
+    regex = r"No such file or directory"
+
+    with TemporaryFile() as file_:
+      with self.assertRaises(ChildProcessError):
+        execute(_CAT, path, stderr=file_.fileno())
+
+      file_.seek(0)
+      self.assertRegex(file_.read().decode("utf-8"), regex)
 
 
   def testExecuteAndOutputMultipleLines(self):
     """Test command execution with multiple lines of output."""
     string = "first-line\nsuccess"
-    output, _ = execute(_ECHO, string, read_out=True)
+    output, _ = execute(_ECHO, string, stdout=b"")
     self.assertEqual(output, bytes(string + "\n", "utf-8"))
 
 
   def testExecuteAndInputOutput(self):
     """Test that we can redirect stdin and stdout at the same time."""
-    output, _ = execute(_CAT, data_in=b"success", read_out=True)
+    output, _ = execute(_CAT, stdin=b"success", stdout=b"")
     self.assertEqual(output, b"success")
 
 
   def testExecuteRedirectAll(self):
     """Test that we can redirect stdin, stdout, and stderr at the same time."""
-    out, err = execute(_DD, data_in=b"success", read_out=True, read_err=True)
+    out, err = execute(_DD, stdin=b"success", stdout=b"", stderr=b"")
     line1, line2, _, _ = err.decode("utf-8").split("\n")
 
     self.assertEqual(out, b"success")
@@ -163,7 +197,7 @@ class TestExecute(TestCase):
     # When reading from stderr is turned on the exception must contain
     # the above phrase.
     with self.assertRaisesRegex(ChildProcessError, regex):
-      execute(_CAT, path, read_err=True)
+      execute(_CAT, path, stderr=b"")
 
 
   def testPipelineThrowsForFirstFailure(self):
@@ -182,7 +216,7 @@ class TestExecute(TestCase):
       ]
 
       with self.assertRaisesRegex(ChildProcessError, regex):
-        pipeline(commands, read_err=True)
+        pipeline(commands, stderr=b"")
 
 
   def testFormatPipeline(self):
@@ -239,7 +273,7 @@ class TestExecute(TestCase):
       [_TR, "a", "c"],
       [_TR, "r", "s"],
     ]
-    output, _ = pipeline(commands, read_out=True)
+    output, _ = pipeline(commands, stdout=b"")
 
     self.assertEqual(output, b"success\n")
 
@@ -261,7 +295,7 @@ class TestExecute(TestCase):
       #       command solves the issue.
       #commands += [[_DD, 'bs=%s' % megabyte, 'count=%s' % megabytes]]
 
-      out, _ = pipeline(commands, data_in=data, read_out=True)
+      out, _ = pipeline(commands, stdin=data, stdout=b"")
       self.assertEqual(len(out), len(data))
 
 
@@ -281,6 +315,35 @@ class TestExecute(TestCase):
         pipeline(commands)
 
       commands += [identity]
+
+
+  def testBackgroundTaskIsWaited(self):
+    """Verify that if a started program forks we can see its output as well."""
+    def runAndRead(close=False):
+      """Run a script and read its output."""
+      script = bytes(dedent("""\
+        from os import close, fork
+        from sys import stdout
+        from time import sleep
+
+        pid = fork()
+        if pid == 0:
+          {cmd}
+          sleep(1)
+          print("CHILD")
+        else:
+          print("PARENT")
+      """).format(cmd="close(stdout.fileno())" if close else ""), "utf-8")
+
+      stdout, _ = execute(executable, stdin=script, stdout=b"")
+      return stdout
+
+    stdout = runAndRead()
+    self.assertTrue(stdout == b"PARENT\nCHILD\n" or
+                    stdout == b"CHILD\nPARENT\n", stdout)
+
+    stdout = runAndRead(close=True)
+    self.assertTrue(stdout == b"PARENT\n", stdout)
 
 
 if __name__ == "__main__":
