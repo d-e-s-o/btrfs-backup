@@ -50,12 +50,15 @@ from deso.execute import (
   pipeline,
 )
 from os import (
+  curdir,
+  pardir,
   sep,
   uname,
 )
 from os.path import (
-  abspath,
   dirname,
+  expanduser,
+  isabs,
   isdir,
   join,
   realpath,
@@ -235,7 +238,6 @@ def _isRoot(directory, repository):
 def _findRoot(directory, repository):
   """Find the root of the btrfs file system containing the given directory."""
   assert directory
-  assert directory == abspath(directory)
 
   # Note that we have no guard here against an empty directory as input
   # or later because of a dirname invocation. However, the show command
@@ -510,7 +512,6 @@ def sync(subvolumes, src, dst):
 def _restore(subvolume, src, dst, snapshots, snapshots_only):
   """Restore a snapshot/subvolume by transferal from another repository."""
   snapshot = _findMostRecent(snapshots, subvolume)
-  subvolume = realpath(subvolume)
 
   # In case the given source repository does not contain any snapshots
   # for the given subvolume we cannot do anything but signal that to
@@ -553,7 +554,7 @@ def restore(subvolumes, src, dst, snapshots_only=False):
   snapshots = src.snapshots()
 
   for subvolume in subvolumes:
-    _restore(subvolume, src, dst, snapshots, snapshots_only)
+    _restore(realpath(subvolume), src, dst, snapshots, snapshots_only)
 
 
 def _diff(snapshot, subvolume, repository):
@@ -619,18 +620,31 @@ def _untrail(path):
     return path
 
 
+def _relativize(path):
+  """Adjust a relative path to make it point to the current directory."""
+  if expanduser(path) == path and\
+     not path.startswith(curdir) and\
+     not path.startswith(pardir) and\
+     not isabs(path):
+    return join(curdir, path)
+
+  return path
+
+
 class RepositoryBase:
   """This class represents the base class for repositories for snapshots."""
   def __init__(self, directory, filters=None, read_err=True,
                remote_cmd=None):
     """Initialize the object and bind it to the given directory."""
-    # We always work with absolute paths here.
-    directory = abspath(directory)
-
     self._filters = filters
     self._read_err = read_err
     self._remote_cmd = remote_cmd
-    self._directory = _trail(directory)
+    # In order to properly handle relative paths correctly we need them
+    # to start with the system's indicator for the current directory.
+    # TODO: We could use a better story for path handling. The main
+    #       concern are probably character based path comparisons (for
+    #       prefixes, for instance).
+    self._directory = _trail(_relativize(directory))
 
   def snapshots(self):
     """Retrieve a list of snapshots in this repository."""
@@ -691,7 +705,7 @@ class Repository(RepositoryBase):
   def __init__(self, directory, *args, **kwargs):
     """Initialize the repository, query its root in the btrfs file system."""
     super().__init__(directory, *args, **kwargs)
-    self._root = _findRoot(abspath(directory), self)
+    self._root = _findRoot(_untrail(self._directory), self)
 
 
   def snapshots(self):
@@ -733,7 +747,7 @@ class Repository(RepositoryBase):
     snapshots = self.snapshots()
 
     for subvolume in subvolumes:
-      _purge(subvolume, self, duration, snapshots)
+      _purge(realpath(subvolume), self, duration, snapshots)
 
 
   def diff(self, snapshot, subvolume):

@@ -39,6 +39,7 @@ from deso.btrfs.repository import (
   Repository,
   restore,
   _findCommonSnapshots,
+  _relativize,
   _snapshots,
   sync as syncRepos,
   _trail,
@@ -52,6 +53,9 @@ from deso.btrfs.test.btrfsTest import (
   make,
   Mount,
 )
+from deso.cleanup import (
+  defer,
+)
 from deso.execute import (
   execute,
   findCommand,
@@ -60,6 +64,8 @@ from glob import (
   glob,
 )
 from os import (
+  chdir,
+  getcwd,
   remove,
 )
 from os.path import (
@@ -94,6 +100,15 @@ class TestRepositoryBase(BtrfsTestCase):
     self.assertEqual(_untrail("/"), "/")
     self.assertEqual(_untrail("/home/user"), "/home/user")
     self.assertEqual(_untrail("/home/user/"), "/home/user")
+
+
+  def testRelativize(self):
+    """Verify that the detection and adjustment of relative paths is sane."""
+    self.assertEqual(_relativize("."), ".")
+    self.assertEqual(_relativize("test"), "./test")
+    self.assertEqual(_relativize("test/"), "./test/")
+    self.assertEqual(_relativize("../test/"), "../test/")
+    self.assertEqual(_relativize("~/test"), "~/test")
 
 
   def testRepositoryInNonExistentDirectory(self):
@@ -828,6 +843,73 @@ class TestBtrfsSync(BtrfsTestCase):
         mock_now.now.return_value = now + timedelta(hours=12)
         src.purge(subvolumes, timedelta(minutes=1))
         self.assertEqual(src.snapshots(), [most_recent])
+
+
+  def runRelativeSubvolumeTest(self, file_repo):
+    """Perform a sync and restore using only relative paths for repositories and subvolumes."""
+    with defer() as d:
+      # Under all circumstances we should change back the working
+      # directory. Leaving it in the btrfs root causes the cleanup to
+      # fail.
+      # Note that we need to retrieve the current working directory
+      # outside of the lambda to have it evaluated before we change it.
+      cwd = getcwd()
+      d.defer(lambda: chdir(cwd))
+
+      with alias(self._mount) as m:
+        # All subvolumes are specified relative to our btrfs root.
+        chdir(m.path())
+
+        make(m, "root", subvol=True)
+        make(m, "snapshots")
+        make(m, "backup")
+
+        # Use relative path here.
+        subvolume = "root"
+        src = Repository("snapshots")
+        if not file_repo:
+          dst = Repository("backup")
+        else:
+          recv_filter = [[_DD, "of={file}"]]
+          dst = FileRepository("backup", ".bin", recv_filter)
+
+        # We test all main operations on a repository with relative
+        # paths here. Start with the sync.
+        syncRepos([subvolume], src, dst)
+
+        snap, = src.snapshots()
+        make(m, "root", "file1", data=b"test")
+        # Next the changed file detection.
+        self.assertNotEqual(src.diff(snap["path"], subvolume), [])
+
+        # We need a second snapshot to test purging.
+        syncRepos([subvolume], src, dst)
+
+        if not file_repo:
+          # And test purging. Note that purging is currently unavailable
+          # for file repositories.
+          dst.purge([subvolume], timedelta(minutes=0))
+        else:
+          # For file repositories we need to adjust the destination
+          # slightly because now we send from it (so we need a different
+          # filter).
+          send_filter = [[_DD, "if={file}"]]
+          dst = FileRepository("backup", ".bin", send_filter)
+
+        # And last but not least test restoration.
+        execute(*delete(m.path(subvolume)))
+        execute(*delete(src.path(snap["path"])))
+        restore([subvolume], dst, src)
+
+
+  def testRepositoryRelativeSubvolumes(self):
+    """Verify that normal repositories can handle relative subvolume paths."""
+    self.runRelativeSubvolumeTest(False)
+
+
+  def testFileRepositoryRelativeSubvolumes(self):
+    """Verify that file repositories can handle relative subvolume paths."""
+    self.runRelativeSubvolumeTest(True)
 
 
 if __name__ == "__main__":
