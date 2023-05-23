@@ -1,0 +1,14 @@
+[package]
+name = "btrfs-backup"
+version = "0.0.0"
+authors = ["Daniel Mueller <deso@posteo.net>"]
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = """
+A program for backup & restoration of btrfs subvolumes.
+"""
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.68"
