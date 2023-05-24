@@ -1,7 +1,12 @@
-// Copyright (C) 2022 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2023 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #![allow(clippy::let_and_return, clippy::let_unit_value)]
+
+#[cfg(test)]
+mod test;
+#[allow(unused)]
+mod util;
 
 use anyhow::Result;
 

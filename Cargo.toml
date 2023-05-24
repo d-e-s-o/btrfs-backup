@@ -12,3 +12,7 @@ A program for backup & restoration of btrfs subvolumes.
 
 [dependencies]
 anyhow = "1.0.68"
+
+[dev-dependencies]
+serial_test = "1.0.0"
+tempfile = "3.3.0"
