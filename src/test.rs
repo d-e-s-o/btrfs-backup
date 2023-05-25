@@ -20,6 +20,8 @@ use crate::util::vec_to_path_buf;
 
 /// The name of the `losetup` binary.
 const LOSETUP: &str = "losetup";
+/// The name of the `mkfs.btrfs` binary.
+const MKBTRFS: &str = "mkfs.btrfs";
 
 
 /// A type representing loop back devices.
@@ -101,6 +103,38 @@ impl Drop for LoopDev {
 }
 
 
+/// A loop back device containing a btrfs file system.
+pub struct BtrfsDev {
+  /// The used loop back device.
+  device: LoopDev,
+}
+
+impl BtrfsDev {
+  /// Create a new btrfs loop back device with the provided size (in
+  /// bytes).
+  pub fn new(size: usize) -> Result<Self> {
+    let device = LoopDev::new(size)?;
+    let () = run(MKBTRFS, [device.path()])?;
+
+    Ok(Self { device })
+  }
+
+  /// Create a new btrfs loop back device with the default size (which
+  /// is close to the supported minimum).
+  pub fn with_default() -> Result<Self> {
+    // 109 MiB seems to be the current lowest size of a btrfs volume.
+    // Give it some more.
+    Self::new(128 * 1024 * 1024)
+  }
+
+  /// Retrieve the btrfs file system's path.
+  #[inline]
+  pub fn path(&self) -> &Path {
+    self.device.path()
+  }
+}
+
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -113,5 +147,13 @@ mod tests {
   #[serial]
   fn create_destroy_loopdev() {
     let _loopdev = LoopDev::new(1024).unwrap();
+  }
+
+  /// Check that we can create and destroy a loop back device with a
+  /// btrfs file system.
+  #[test]
+  #[serial]
+  fn create_destroy_btrfs() {
+    let _loopdev = BtrfsDev::with_default().unwrap();
   }
 }
