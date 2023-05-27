@@ -3,6 +3,7 @@
 
 #![allow(clippy::let_and_return, clippy::let_unit_value)]
 
+mod btrfs;
 #[cfg(test)]
 mod test;
 #[allow(unused)]
