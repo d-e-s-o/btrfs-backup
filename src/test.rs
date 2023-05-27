@@ -3,6 +3,7 @@
 
 use std::cmp::min;
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
@@ -12,7 +13,9 @@ use anyhow::Context as _;
 use anyhow::Result;
 
 use tempfile::NamedTempFile;
+use tempfile::TempDir;
 
+use crate::util::join;
 use crate::util::output;
 use crate::util::run;
 use crate::util::vec_to_path_buf;
@@ -22,6 +25,10 @@ use crate::util::vec_to_path_buf;
 const LOSETUP: &str = "losetup";
 /// The name of the `mkfs.btrfs` binary.
 const MKBTRFS: &str = "mkfs.btrfs";
+/// The name of the `mount` binary.
+const MOUNT: &str = "mount";
+/// The name of the `umount` binary.
+const UMOUNT: &str = "umount";
 
 
 /// A type representing loop back devices.
@@ -135,6 +142,65 @@ impl BtrfsDev {
 }
 
 
+/// An object representing a mounted file system.
+pub struct Mount {
+  /// The directory in which the file system was mounted.
+  directory: TempDir,
+}
+
+impl Mount {
+  /// Mount the provided device in a temporary directory.
+  pub fn new(device: &Path) -> Result<Self> {
+    let no_options = [""; 0];
+    Self::with_options(device, no_options)
+  }
+
+  /// Mount the provided device in a temporary directory, providing the
+  /// given set of options to the `mount(8)` command.
+  pub fn with_options<O, S>(device: &Path, options: O) -> Result<Self>
+  where
+    O: IntoIterator<Item = S>,
+    S: AsRef<str> + Display,
+  {
+    let directory = TempDir::new()?;
+    let options = join(',', options.into_iter());
+
+    let () = if let Some(options) = options {
+      run(
+        MOUNT,
+        [
+          device.as_os_str(),
+          directory.path().as_os_str(),
+          OsStr::new("-o"),
+          options.as_ref(),
+        ],
+      )
+    } else {
+      run(MOUNT, [device.as_os_str(), directory.path().as_os_str()])
+    }?;
+
+    Ok(Self { directory })
+  }
+
+  /// Retrieve the path of the mount.
+  #[inline]
+  pub fn path(&self) -> &Path {
+    self.directory.path()
+  }
+}
+
+impl Drop for Mount {
+  fn drop(&mut self) {
+    let () = run(UMOUNT, [self.directory.path()]).unwrap_or_else(|error| {
+      panic!(
+        "failed to unmount {}: {error}",
+        self.directory.path().display()
+      )
+    });
+  }
+}
+
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -149,11 +215,11 @@ mod tests {
     let _loopdev = LoopDev::new(1024).unwrap();
   }
 
-  /// Check that we can create and destroy a loop back device with a
-  /// btrfs file system.
+  /// Check that we can create and mount btrfs file system.
   #[test]
   #[serial]
-  fn create_destroy_btrfs() {
-    let _loopdev = BtrfsDev::with_default().unwrap();
+  fn create_mount_btrfs() {
+    let loopdev = BtrfsDev::with_default().unwrap();
+    let _mount = Mount::new(loopdev.path()).unwrap();
   }
 }

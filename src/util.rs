@@ -19,6 +19,22 @@ use anyhow::Context as _;
 use anyhow::Result;
 
 
+/// Join items with a character.
+#[cfg(test)]
+pub fn join<I, T>(joiner: char, iter: I) -> Option<String>
+where
+  I: IntoIterator<Item = T>,
+  T: Display,
+{
+  let mut iter = iter.into_iter();
+  iter.next().map(|first| {
+    iter.fold(first.to_string(), |list, item| {
+      format!("{list}{joiner}{item}")
+    })
+  })
+}
+
+
 /// Format a command with the given list of arguments as a string.
 pub fn format_command<C, A, S>(command: C, args: A) -> String
 where
