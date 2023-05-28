@@ -6,7 +6,6 @@
 mod btrfs;
 #[cfg(test)]
 mod test;
-#[allow(unused)]
 mod util;
 
 use anyhow::Result;

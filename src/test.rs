@@ -201,6 +201,18 @@ impl Drop for Mount {
 }
 
 
+/// Create and mount a btrfs file system and invoke a function on it.
+pub fn with_btrfs<F>(f: F)
+where
+  F: FnOnce(&Path),
+{
+  let loopdev = BtrfsDev::with_default().unwrap();
+  let mount = Mount::new(loopdev.path()).unwrap();
+
+  f(mount.path())
+}
+
+
 #[cfg(test)]
 mod tests {
   use super::*;

@@ -93,25 +93,12 @@ where
   Ok(status.success())
 }
 
-/// Run a command with the provided arguments.
-fn run_impl<C, A, S>(command: C, args: A, stdout: Stdio) -> Result<Output>
+fn evaluate<C, A, S>(output: &Output, command: C, args: A) -> Result<()>
 where
   C: AsRef<OsStr>,
-  A: IntoIterator<Item = S> + Clone,
+  A: IntoIterator<Item = S>,
   S: AsRef<OsStr>,
 {
-  let output = Command::new(command.as_ref())
-    .stdin(Stdio::null())
-    .stdout(stdout)
-    .args(args.clone())
-    .output()
-    .with_context(|| {
-      format!(
-        "failed to run `{}`",
-        format_command(command.as_ref(), args.clone())
-      )
-    })?;
-
   if !output.status.success() {
     let code = if let Some(code) = output.status.code() {
       format!(" ({code})")
@@ -132,7 +119,29 @@ where
       format_command(command, args),
     );
   }
+  Ok(())
+}
 
+/// Run a command with the provided arguments.
+fn run_impl<C, A, S>(command: C, args: A, stdout: Stdio) -> Result<Output>
+where
+  C: AsRef<OsStr>,
+  A: IntoIterator<Item = S> + Clone,
+  S: AsRef<OsStr>,
+{
+  let output = Command::new(command.as_ref())
+    .stdin(Stdio::null())
+    .stdout(stdout)
+    .args(args.clone())
+    .output()
+    .with_context(|| {
+      format!(
+        "failed to run `{}`",
+        format_command(command.as_ref(), args.clone())
+      )
+    })?;
+
+  let () = evaluate(&output, command, args)?;
   Ok(output)
 }
 
@@ -156,4 +165,65 @@ where
 {
   let output = run_impl(command, args, Stdio::piped())?;
   Ok(output.stdout)
+}
+
+pub fn pipeline<C1, A1, S1, C2, A2, S2>(
+  command1: C1,
+  args1: A1,
+  command2: C2,
+  args2: A2,
+) -> Result<()>
+where
+  C1: AsRef<OsStr>,
+  A1: IntoIterator<Item = S1> + Clone,
+  S1: AsRef<OsStr>,
+  C2: AsRef<OsStr>,
+  A2: IntoIterator<Item = S2> + Clone,
+  S2: AsRef<OsStr>,
+{
+  let mut child1 = Command::new(command1.as_ref())
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .args(args1.clone())
+    .spawn()
+    .with_context(|| {
+      format!(
+        "failed to run `{}`",
+        format_command(command1.as_ref(), args1.clone())
+      )
+    })?;
+
+  // SANITY: We know that `child1` has a stdout pipe.
+  let stdout = child1.stdout.take().unwrap();
+
+  let child2 = Command::new(command2.as_ref())
+    .stdin(stdout)
+    .stdout(Stdio::null())
+    .stderr(Stdio::piped())
+    .args(args2.clone())
+    .spawn()
+    .with_context(|| {
+      format!(
+        "failed to run `{}`",
+        format_command(command2.as_ref(), args2.clone())
+      )
+    })?;
+
+  let output1 = child1.wait_with_output().with_context(|| {
+    format!(
+      "failed to run `{}`",
+      format_command(command1.as_ref(), args1.clone())
+    )
+  })?;
+  let output2 = child2.wait_with_output().with_context(|| {
+    format!(
+      "failed to run `{}`",
+      format_command(command2.as_ref(), args2.clone())
+    )
+  })?;
+
+  let () = evaluate(&output1, command1, args1)?;
+  let () = evaluate(&output2, command2, args2)?;
+  Ok(())
 }
