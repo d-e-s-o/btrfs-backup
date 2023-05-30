@@ -4,6 +4,7 @@
 #![allow(clippy::let_and_return, clippy::let_unit_value)]
 
 mod btrfs;
+mod repo;
 #[cfg(test)]
 mod test;
 mod util;
