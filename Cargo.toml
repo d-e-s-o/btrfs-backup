@@ -14,6 +14,8 @@ A program for backup & restoration of btrfs subvolumes.
 anyhow = "1.0.68"
 once_cell = "1.17.0"
 regex = {version = "1.7.1", default-features = false, features = ["std"]}
+time = {version = "=0.3.17", features = ["local-offset", "macros", "parsing"]}
+uname = "0.1.1"
 
 [dev-dependencies]
 serial_test = "1.0.0"

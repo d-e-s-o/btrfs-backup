@@ -5,6 +5,7 @@
 
 mod btrfs;
 mod repo;
+mod snapshot;
 #[cfg(test)]
 mod test;
 mod util;

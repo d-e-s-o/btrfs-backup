@@ -1,2 +1,12 @@
+[build]
+# Opt out of the local time zone offset safety mess on Unix. The program
+# does not mutate its environment, so we do not run risk of unsafety. We
+# do, however, run in a multi-threaded setting when executing tests, so
+# without this setting the underlying safe guard in the time crate
+# prevents us from running properly.
+# We could work with UTC times conceptually, but that's a no-go from a
+# user-experience perspective.
+rustflags = ["--cfg", "unsound_local_offset"]
+
 [target.x86_64-unknown-linux-gnu]
 runner = ".cargo/runner.sh"
