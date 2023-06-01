@@ -18,6 +18,8 @@ use anyhow::Result;
 use once_cell::sync::Lazy;
 
 use time::macros::format_description;
+use time::util::local_offset::set_soundness;
+use time::util::local_offset::Soundness;
 use time::Date;
 use time::OffsetDateTime;
 use time::PrimitiveDateTime;
@@ -27,7 +29,21 @@ use time::UtcOffset;
 use uname::uname;
 
 /// The UTC time zone offset we use throughout the program.
-static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| UtcOffset::current_local_offset().unwrap());
+static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| {
+  if cfg!(test) {
+    // SAFETY: Our tests do not mutate the environment.
+    let () = unsafe { set_soundness(Soundness::Unsound) };
+  }
+
+  let offset = UtcOffset::current_local_offset().unwrap();
+
+  if cfg!(test) {
+    // SAFETY: The call is always safe for `Soundness::Sound`.
+    let () = unsafe { set_soundness(Soundness::Sound) };
+  }
+
+  offset
+});
 
 
 /// A type representing the base name of a snapshot.
