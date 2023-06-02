@@ -12,6 +12,7 @@ A program for backup & restoration of btrfs subvolumes.
 
 [dependencies]
 anyhow = "1.0.68"
+clap = {version = "4.1.4", features = ["derive"]}
 once_cell = "1.17.0"
 regex = {version = "1.7.1", default-features = false, features = ["std"]}
 time = {version = "0.3.18", features = ["local-offset", "macros", "parsing"]}
