@@ -210,6 +210,14 @@ impl Snapshot {
     Ok(slf)
   }
 
+  /// Create a new `Snapshot` object based on the current one but with
+  /// with `number` cleared.
+  pub fn strip_number(&self) -> Self {
+    let mut new = self.clone();
+    new.number = None;
+    new
+  }
+
   /// Retrieve the base name of the snapshot.
   #[inline]
   pub fn as_base_name(&self) -> SnapshotBase<'_> {
