@@ -10,6 +10,7 @@ use clap::Subcommand;
 
 /// A program for backup & restoration of btrfs subvolumes.
 #[derive(Debug, Parser)]
+#[clap(version = env!("VERSION"))]
 pub struct Args {
   #[command(subcommand)]
   pub command: Command,
