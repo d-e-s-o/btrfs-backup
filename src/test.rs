@@ -213,6 +213,22 @@ where
 }
 
 
+/// Create and mount two btrfs file systems and invoke a function on
+/// them.
+pub fn with_two_btrfs<F>(f: F)
+where
+  F: FnOnce(&Path, &Path),
+{
+  let loopdev1 = BtrfsDev::with_default().unwrap();
+  let mount1 = Mount::new(loopdev1.path()).unwrap();
+
+  let loopdev2 = BtrfsDev::with_default().unwrap();
+  let mount2 = Mount::new(loopdev2.path()).unwrap();
+
+  f(mount1.path(), mount2.path())
+}
+
+
 #[cfg(test)]
 mod tests {
   use super::*;

@@ -1,6 +1,8 @@
 // Copyright (C) 2022-2023 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::collections::BTreeSet;
+use std::ffi::OsStr;
 use std::fs::canonicalize;
 use std::fs::create_dir_all;
 use std::path::Path;
@@ -66,6 +68,60 @@ fn find_most_recent_snapshot<'snaps>(
   // The most recent snapshot (i.e., the one with the largest time
   // stamp) will be the last one.
   Ok(snapshots.into_iter().last())
+}
+
+
+/// "Deploy" a snapshot in a source repository to a destination.
+fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot) -> Result<()> {
+  let base_name = src_snap.as_base_name();
+  let dst_snaps = dst
+    .snapshots()?
+    .into_iter()
+    .map(|(snapshot, _generation)| snapshot)
+    .filter(|snapshot| snapshot.as_base_name() == base_name)
+    .collect::<BTreeSet<_>>();
+
+  // Check whether the snapshot already exists at the destination. That
+  // may be the case if the subvolume did not change and we did not
+  // actually create a new snapshot to begin with.
+  if dst_snaps.contains(src_snap) {
+    return Ok(())
+  }
+
+  // TODO: The `src.snapshot` invocation above already retrieves the
+  //       snapshot list internally. We should remove duplicate
+  //       operations.
+  let src_snaps = src
+    .snapshots()?
+    .into_iter()
+    .map(|(snapshot, _generation)| snapshot)
+    .filter(|snapshot| snapshot.as_base_name() == base_name)
+    .collect::<BTreeSet<_>>();
+
+  // Find all candidate parent snapshots, which is basically nothing
+  // more than the set of snapshots of the provided subvolume available
+  // in both repositories.
+  let parents = src_snaps
+    .intersection(&dst_snaps)
+    .into_iter()
+    .map(|snapshot| src.path().join(snapshot.to_string()))
+    .collect::<Vec<_>>();
+  let parents = parents.iter().map(OsStr::new);
+
+  let () = src.btrfs.sync(&src.btrfs_root)?;
+  let () = src
+    .btrfs
+    .send_recv(&src.path().join(src_snap.to_string()), parents, &dst.path())?;
+
+  Ok(())
+}
+
+
+/// Backup a subvolume from a source repository to a destination.
+pub fn backup(src: &Repo, dst: &Repo, subvol: &Path) -> Result<Snapshot> {
+  let src_snap = src.snapshot(subvol)?;
+  let () = deploy(src, dst, &src_snap)?;
+  Ok(src_snap)
 }
 
 
@@ -207,6 +263,9 @@ mod tests {
   use serial_test::serial;
 
   use crate::test::with_btrfs;
+  use crate::test::with_two_btrfs;
+  use crate::test::BtrfsDev;
+  use crate::test::Mount;
 
 
   /// Check that we can create a snapshot of a subvolume.
@@ -356,6 +415,127 @@ mod tests {
       // the snapshot listing.
       let snapshots = repo.snapshots().unwrap();
       assert!(snapshots.is_empty());
+    })
+  }
+
+  /// Check that we can backup a subvolume across file system
+  /// boundaries.
+  #[test]
+  #[serial]
+  fn backup_subvolume() {
+    with_two_btrfs(|src_root, dst_root| {
+      let src = Repo::new(src_root).unwrap();
+      let dst = Repo::new(dst_root).unwrap();
+
+      let btrfs = Btrfs::new();
+      let subvol = src_root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let () = write(subvol.join("file"), "test42").unwrap();
+
+      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      let content = read_to_string(dst.path().join(snapshot.to_string()).join("file")).unwrap();
+      assert_eq!(content, "test42");
+    })
+  }
+
+  /// Check that we can backup a subvolume mounted with the `subvol`
+  /// option.
+  #[test]
+  #[serial]
+  fn backup_subvolume_with_subvol_option() {
+    let src_loopdev = BtrfsDev::with_default().unwrap();
+
+    {
+      let src_mount = Mount::new(src_loopdev.path()).unwrap();
+      let btrfs = Btrfs::new();
+      let subvol = src_mount.path().join("some-subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let () = write(subvol.join("file"), "test42").unwrap();
+    }
+
+    let src_mount = Mount::with_options(src_loopdev.path(), ["subvol=some-subvol"]).unwrap();
+    let src_root = src_mount.path();
+    assert!(src_root.join("file").exists());
+
+    let dst_loopdev = BtrfsDev::with_default().unwrap();
+    let dst_mount = Mount::new(dst_loopdev.path()).unwrap();
+    let dst_root = dst_mount.path();
+
+    let src = Repo::new(src_root).unwrap();
+    let dst = Repo::new(dst_root).unwrap();
+
+    let subvol = src_mount.path();
+    let () = write(subvol.join("file"), "test42").unwrap();
+
+    let snapshot = backup(&src, &dst, subvol).unwrap();
+    let content = read_to_string(dst.path().join(snapshot.to_string()).join("file")).unwrap();
+    assert_eq!(content, "test42");
+  }
+
+  /// Check that we error out as expected when attempting to backup a
+  /// non-existent subvolume.
+  #[test]
+  #[serial]
+  fn backup_non_existent_subvolume() {
+    with_two_btrfs(|src_root, dst_root| {
+      let src = Repo::new(src_root).unwrap();
+      let dst = Repo::new(dst_root).unwrap();
+
+      let subvol = src_root.join("subvol");
+      let error = backup(&src, &dst, &subvol).unwrap_err();
+      assert!(error.to_string().contains("No such file or directory"));
+    })
+  }
+
+  /// Make sure that if the subvolume to backup is already up-to-date
+  /// with respect to a snapshot, no additional work is done.
+  #[test]
+  #[serial]
+  fn backup_subvolume_up_to_date() {
+    with_two_btrfs(|src_root, dst_root| {
+      let src = Repo::new(src_root).unwrap();
+      let dst = Repo::new(dst_root).unwrap();
+
+      let btrfs = Btrfs::new();
+      let subvol = src_root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+
+      let snapshot1 = backup(&src, &dst, &subvol).unwrap();
+      let snapshot2 = backup(&src, &dst, &subvol).unwrap();
+      assert_eq!(snapshot1, snapshot2);
+
+      let snapshots = dst.snapshots().unwrap();
+      assert_eq!(snapshots.len(), 1);
+    })
+  }
+
+  // TODO: Ideally we'd have a test that checks that incremental backups
+  //       cause less data to be transferred to make sure that we are
+  //       doing everything right, but currently that's not easily
+  //       possible to check for.
+
+  /// Make sure that incremental backups can be pulled.
+  #[test]
+  #[serial]
+  fn backup_subvolume_incremental() {
+    with_two_btrfs(|src_root, dst_root| {
+      let src = Repo::new(src_root).unwrap();
+      let dst = Repo::new(dst_root).unwrap();
+
+      let btrfs = Btrfs::new();
+      let subvol = src_root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+
+      let _snapshot = backup(&src, &dst, &subvol).unwrap();
+
+      for i in 0..20 {
+        let string = "test".to_string() + &i.to_string();
+        let () = write(subvol.join("file"), &string).unwrap();
+
+        let snapshot = backup(&src, &dst, &subvol).unwrap();
+        let content = read_to_string(dst.path().join(snapshot.to_string()).join("file")).unwrap();
+        assert_eq!(content, string);
+      }
     })
   }
 }
