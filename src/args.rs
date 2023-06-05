@@ -18,8 +18,28 @@ pub struct Args {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+  /// Backup one or more subvolumes from one btrfs file system to
+  /// another.
+  Backup(Backup),
   /// Create a snapshot of one or more subvolumes.
   Snapshot(Snapshot),
+}
+
+/// An enumeration representing the `backup` command.
+#[derive(Debug, Arguments)]
+pub struct Backup {
+  /// The subvolumes to snapshot.
+  pub subvolumes: Vec<PathBuf>,
+  /// The path to the source "repository" to create the snapshots in.
+  ///
+  /// If not provided, snapshots will be co-located with the very
+  /// subvolume being backed up.
+  #[clap(short, long)]
+  pub source: Option<PathBuf>,
+  /// The path to the destination "repository" to back up the subvolumes
+  /// to.
+  #[clap(short, long)]
+  pub destination: PathBuf,
 }
 
 /// An enumeration representing the `snapshot` command.
