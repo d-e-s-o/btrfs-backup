@@ -10,6 +10,13 @@ A program for backup & restoration of btrfs subvolumes.
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+incremental = false
+panic = "abort"
+
 [build-dependencies]
 anyhow = "1.0.68"
 grev = "0.1.3"
