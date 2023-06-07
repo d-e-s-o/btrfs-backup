@@ -7,8 +7,14 @@ license = "GPL-3.0-or-later"
 description = """
 A program for backup & restoration of btrfs subvolumes.
 """
+default-run = "btrfs-backup"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "shell-complete"
+path = "var/shell-complete.rs"
+required-features = ["clap_complete"]
 
 [profile.release]
 opt-level = "z"
@@ -24,6 +30,7 @@ grev = "0.1.3"
 [dependencies]
 anyhow = "1.0.68"
 clap = {version = "4.1.4", features = ["derive"]}
+clap_complete = {version = "4.1.1", optional = true}
 once_cell = "1.17.0"
 regex = {version = "1.7.1", default-features = false, features = ["std"]}
 time = {version = "0.3.18", features = ["local-offset", "macros", "parsing"]}
