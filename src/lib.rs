@@ -3,6 +3,9 @@
 
 #![allow(clippy::let_and_return, clippy::let_unit_value)]
 
+#[macro_use]
+mod redefine;
+
 mod args;
 mod btrfs;
 mod repo;
@@ -23,6 +26,7 @@ use crate::args::Args;
 use crate::args::Backup;
 use crate::args::Command;
 use crate::args::Snapshot;
+use crate::btrfs::trace_commands;
 use crate::repo::backup as backup_subvol;
 use crate::repo::Repo;
 
@@ -118,6 +122,11 @@ fn snapshot(snapshot: Snapshot) -> Result<()> {
 /// Run the program and report errors, if any.
 pub fn run() -> Result<()> {
   let args = Args::parse();
+
+  if args.trace {
+    let () = trace_commands();
+  }
+
   match args.command {
     Command::Backup(backup) => self::backup(backup),
     Command::Snapshot(snapshot) => self::snapshot(snapshot),

@@ -14,6 +14,9 @@ use clap::Subcommand;
 pub struct Args {
   #[command(subcommand)]
   pub command: Command,
+  /// Print a trace of all commands executed.
+  #[clap(long = "trace", global = true)]
+  pub trace: bool,
 }
 
 #[derive(Debug, Subcommand)]

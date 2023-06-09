@@ -10,6 +10,8 @@ use std::fs::canonicalize;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr as _;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 
 use anyhow::Context as _;
 use anyhow::Result;
@@ -43,6 +45,17 @@ static SNAPSHOTS_LINE_REGEX: Lazy<Regex> = Lazy::new(|| {
 /// have changed.
 static DIFF_END_MARKER: &[u8] = b"transid marker";
 
+/// A flag indicating whether to print traces of all commands executed.
+static TRACE_COMMANDS: AtomicBool = AtomicBool::new(false);
+
+
+/// Enable command tracing, i.e., printing of all executed commands to
+/// stdout.
+#[inline]
+pub fn trace_commands() {
+  TRACE_COMMANDS.store(true, Ordering::Relaxed)
+}
+
 
 /// A type for performing various btrfs related operations.
 #[derive(Clone, Debug)]
@@ -55,36 +68,59 @@ impl Btrfs {
     Self(())
   }
 
+  /// Print a btrfs command to stdout, if enabled.
+  fn maybe_print<A, S>(&self, args: A)
+  where
+    A: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+  {
+    if TRACE_COMMANDS.load(Ordering::Relaxed) {
+      println!("{}", format_command(BTRFS, args))
+    }
+  }
+
   /// Check whether `filesystem` points to a valid btrfs filesystem.
   pub fn is_btrfs(&self, filesystem: &Path) -> Result<bool> {
-    check(BTRFS, commands::show_filesystem(filesystem))
+    let args = commands::show_filesystem(filesystem);
+    let () = self.maybe_print(args.clone());
+    check(BTRFS, args)
   }
 
   /// Create a subvolume.
   #[cfg(test)]
   pub fn create_subvol(&self, subvolume: &Path) -> Result<()> {
-    run(BTRFS, commands::create(subvolume))
+    let args = commands::create(subvolume);
+    let () = self.maybe_print(args.clone());
+    run(BTRFS, args)
   }
 
   /// Delete a subvolume.
   #[cfg(test)]
   pub fn delete_subvol(&self, subvolume: &Path) -> Result<()> {
-    run(BTRFS, commands::delete(subvolume))
+    let args = commands::delete(subvolume);
+    let () = self.maybe_print(args.clone());
+    run(BTRFS, args)
   }
 
   /// Snapshot a subvolume `source` to `destination`.
   pub fn snapshot(&self, source: &Path, destination: &Path, readonly: bool) -> Result<()> {
-    run(BTRFS, commands::snapshot(source, destination, readonly))
+    let args = commands::snapshot(source, destination, readonly);
+    let () = self.maybe_print(args.clone());
+    run(BTRFS, args)
   }
 
   /// Synchronize the provided btrfs file system to disk.
   pub fn sync(&self, filesystem: &Path) -> Result<()> {
-    run(BTRFS, commands::sync(filesystem))
+    let args = commands::sync(filesystem);
+    let () = self.maybe_print(args.clone());
+    run(BTRFS, args)
   }
 
   /// List all subvolumes in `directory`.
   fn subvolumes_impl(&self, directory: &Path, readonly: bool) -> Result<Vec<(PathBuf, usize)>> {
     let args = commands::subvolumes(directory, readonly);
+    let () = self.maybe_print(args.clone());
+
     let output = output(BTRFS, args.clone())?;
     let output = String::from_utf8(output).with_context(|| {
       format!(
@@ -201,6 +237,8 @@ impl Btrfs {
     // have to increment the generation by one, otherwise the files
     // changed *in* the snapshot are included in the diff as well.
     let args = commands::diff(subvolume, generation + 1);
+    let () = self.maybe_print(args.clone());
+
     let output = output(BTRFS, args)?;
     let result = !output.starts_with(DIFF_END_MARKER);
     Ok(result)
@@ -209,6 +247,8 @@ impl Btrfs {
   /// Query the ID of a subvolume at the provided `path`.
   pub fn subvol_id(&self, path: &Path) -> Result<usize> {
     let args = commands::root_id(path);
+    let () = self.maybe_print(args.clone());
+
     let output = output(BTRFS, args.clone())?;
     let output = String::from_utf8(output).with_context(|| {
       format!(
@@ -234,7 +274,10 @@ impl Btrfs {
   ///
   /// The returned path will be relative to the file system's root.
   pub fn resolve_id(&self, id: usize, root: &Path) -> Result<PathBuf> {
-    let output = output(BTRFS, commands::resolve_id(id, root))?;
+    let args = commands::resolve_id(id, root);
+    let () = self.maybe_print(args.clone());
+
+    let output = output(BTRFS, args)?;
     let path = bytes_to_path(&output[..output.len().saturating_sub(1)]);
     Ok(path.to_path_buf())
   }
@@ -254,6 +297,15 @@ impl Btrfs {
   {
     let args1 = commands::serialize(send_subvolume, send_parents);
     let args2 = commands::deserialize(recv_destination);
+
+    if TRACE_COMMANDS.load(Ordering::Relaxed) {
+      println!(
+        "{} | {}",
+        format_command(BTRFS, args1.clone()),
+        format_command(BTRFS, args2.clone())
+      )
+    }
+
     pipeline(BTRFS, args1, BTRFS, args2)
   }
 }

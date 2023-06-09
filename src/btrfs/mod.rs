@@ -5,4 +5,5 @@
 mod btrfs;
 mod commands;
 
+pub use btrfs::trace_commands;
 pub use btrfs::Btrfs;
