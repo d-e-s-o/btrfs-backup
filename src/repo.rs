@@ -5,6 +5,8 @@ use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs::canonicalize;
 use std::fs::create_dir_all;
+use std::fs::metadata;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -125,6 +127,63 @@ pub fn backup(src: &Repo, dst: &Repo, subvol: &Path) -> Result<Snapshot> {
 }
 
 
+/// Check whether a `path` references a directory.
+///
+/// This function differs from [`std::path::Path::is_dir`] in that it
+/// only maps file-not-found errors into the `Ok` portion of the result.
+/// All other errors (such as permission denied) are reported verbatim.
+fn is_dir(path: &Path) -> Result<bool> {
+  match metadata(path) {
+    Ok(info) => Ok(info.is_dir()),
+    Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
+    Err(err) => Err(err.into()),
+  }
+}
+
+/// Restore a subvolume from a source repository.
+pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Result<()> {
+  let snapshots = src.snapshots()?;
+  let (snapshot, _generation) =
+    find_most_recent_snapshot(&snapshots, subvol)?.with_context(|| {
+      // In case the given source repository does not contain any snapshots
+      // for the given subvolume we cannot do anything but signal that to
+      // the user.
+      format!(
+        "No snapshot to restore found for subvolume {} in {}",
+        subvol.display(),
+        src.path().display()
+      )
+    })?;
+
+  // We want to signal an error to the user in case the subvolume
+  // already exists but he/she has asked us to restore it. We cannot
+  // solely rely on btrfs snapshot for this detection because in case
+  // there is a directory where 'subvolume' points to, the command will
+  // just manifest the new subvolume in this directory. So explicitly
+  // guard against this case here.
+  if !snapshot_only && is_dir(subvol)? {
+    bail!(
+      "Cannot restore subvolume {}: a directory with this name exists",
+      subvol.display()
+    )
+  }
+
+  // Restoration of a subvolume involves a subset of the steps we do
+  // when we pull a backup: the deployment.
+  let () = deploy(src, dst, snapshot)?;
+
+  if !snapshot_only {
+    // Now that we got the snapshot back on the destination repository,
+    // we can restore the actual subvolume from it.
+    let readonly = true;
+    let () = dst
+      .btrfs
+      .snapshot(&dst.path().join(snapshot.to_string()), subvol, !readonly)?;
+  }
+  Ok(())
+}
+
+
 /// A repository used for managing btrfs snapshots.
 #[derive(Clone, Debug)]
 pub struct Repo {
@@ -209,6 +268,14 @@ impl Repo {
     let snapshot_path = self.path().join(snapshot.to_string());
     let () = self.btrfs.snapshot(subvol, &snapshot_path, readonly)?;
     Ok(snapshot)
+  }
+
+  /// Delete the provided snapshot from the repository.
+  #[cfg(test)]
+  pub fn delete(&self, snapshot: &Snapshot) -> Result<()> {
+    let snapshot_path = self.path().join(snapshot.to_string());
+    let () = self.btrfs.delete_subvol(&snapshot_path)?;
+    Ok(())
   }
 
   /// Retrieve a list of snapshots in this repository.
@@ -536,6 +603,116 @@ mod tests {
         let content = read_to_string(dst.path().join(snapshot.to_string()).join("file")).unwrap();
         assert_eq!(content, string);
       }
+    })
+  }
+
+  /// Check that we can restore a subvolume from a snapshot.
+  #[test]
+  #[serial]
+  fn restore_subvolume() {
+    with_two_btrfs(|src_root, dst_root| {
+      let src = Repo::new(src_root).unwrap();
+      let dst = Repo::new(dst_root).unwrap();
+
+      let btrfs = Btrfs::new();
+      let subvol = src_root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let () = write(subvol.join("file"), "test42").unwrap();
+
+      // Backup the subvolume to the destination repository.
+      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      // Then remove the source snapshot and the source subvolume.
+      let () = src.delete(&snapshot).unwrap();
+      assert!(!src.path().join(snapshot.to_string()).join("file").exists());
+
+      let () = btrfs.delete_subvol(&subvol).unwrap();
+      assert!(!subvol.join("file").exists());
+
+      // And lastly, attempt restoration of both.
+      let snapshot_only = false;
+      let () = restore(&dst, &src, &subvol, snapshot_only).unwrap();
+
+      // The snapshot should be back with the respective content.
+      let content = read_to_string(src.path().join(snapshot.to_string()).join("file")).unwrap();
+      assert_eq!(content, "test42");
+
+      // And so should the subvolume.
+      let content = read_to_string(subvol.join("file")).unwrap();
+      assert_eq!(content, "test42");
+    })
+  }
+
+  /// Check that we can restore only a snapshot.
+  #[test]
+  #[serial]
+  fn restore_snapshot_only() {
+    with_two_btrfs(|src_root, dst_root| {
+      let src = Repo::new(src_root).unwrap();
+      let dst = Repo::new(dst_root).unwrap();
+
+      let btrfs = Btrfs::new();
+      let subvol = src_root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let () = write(subvol.join("file"), "test42").unwrap();
+
+      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      let () = src.delete(&snapshot).unwrap();
+
+      let snapshot_only = true;
+      let () = restore(&dst, &src, &subvol, snapshot_only).unwrap();
+
+      // The snapshot should be back with the respective content.
+      let content = read_to_string(src.path().join(snapshot.to_string()).join("file")).unwrap();
+      assert_eq!(content, "test42");
+    })
+  }
+
+  /// Check that we fail subvolume restoration if the subvolume already
+  /// exists.
+  #[test]
+  #[serial]
+  fn restore_subvolume_exists() {
+    with_two_btrfs(|src_root, dst_root| {
+      let src = Repo::new(src_root).unwrap();
+      let dst = Repo::new(dst_root).unwrap();
+
+      let btrfs = Btrfs::new();
+      let subvol = src_root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+
+      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      // Then remove the source snapshot and the source subvolume.
+      let () = src.delete(&snapshot).unwrap();
+
+      // And lastly, attempt restoration of both.
+      let snapshot_only = false;
+      let error = restore(&dst, &src, &subvol, snapshot_only).unwrap_err();
+      assert!(error
+        .to_string()
+        .contains("a directory with this name exists"));
+    })
+  }
+
+  /// Check that we fail subvolume restoration if no suitable snapshot
+  /// is present to restore from.
+  #[test]
+  #[serial]
+  fn restore_subvolume_missing_snapshot() {
+    with_two_btrfs(|src_root, dst_root| {
+      let src = Repo::new(src_root).unwrap();
+      let dst = Repo::new(dst_root).unwrap();
+
+      let btrfs = Btrfs::new();
+      let subvol = src_root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+
+      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      // Then remove the just created snapshot.
+      let () = dst.delete(&snapshot).unwrap();
+
+      let snapshot_only = false;
+      let error = restore(&dst, &src, &subvol, snapshot_only).unwrap_err();
+      assert!(error.to_string().contains("No snapshot to restore found"));
     })
   }
 }
