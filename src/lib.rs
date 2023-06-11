@@ -25,9 +25,11 @@ use clap::Parser as _;
 use crate::args::Args;
 use crate::args::Backup;
 use crate::args::Command;
+use crate::args::Restore;
 use crate::args::Snapshot;
 use crate::btrfs::trace_commands;
 use crate::repo::backup as backup_subvol;
+use crate::repo::restore as restore_subvol;
 use crate::repo::Repo;
 
 
@@ -83,6 +85,45 @@ fn backup(backup: Backup) -> Result<()> {
 }
 
 
+/// Handler for the `restore` sub-command.
+fn restore(restore: Restore) -> Result<()> {
+  let Restore {
+    subvolumes,
+    destination,
+    source,
+    snapshots_only,
+  } = restore;
+
+  let dst = if let Some(destination) = destination {
+    Some(create_repo(&destination)?)
+  } else {
+    None
+  };
+
+  let src = create_repo(&source)?;
+
+  let () = subvolumes.iter().try_for_each::<_, Result<()>>(|subvol| {
+    let dst = if let Some(dst) = &dst {
+      Cow::Borrowed(dst)
+    } else {
+      let directory = subvol.parent().with_context(|| {
+        format!(
+          "subvolume {} does not have a parent; unable to store snapshots",
+          subvol.display()
+        )
+      })?;
+      Cow::Owned(create_repo(directory)?)
+    };
+
+    let _snapshot = restore_subvol(&src, &dst, subvol, snapshots_only)
+      .with_context(|| format!("failed to restore subvolume {}", subvol.display()))?;
+    Ok(())
+  })?;
+
+  Ok(())
+}
+
+
 /// Handler for the `snapshot` sub-command.
 fn snapshot(snapshot: Snapshot) -> Result<()> {
   let Snapshot {
@@ -129,6 +170,7 @@ pub fn run() -> Result<()> {
 
   match args.command {
     Command::Backup(backup) => self::backup(backup),
+    Command::Restore(restore) => self::restore(restore),
     Command::Snapshot(snapshot) => self::snapshot(snapshot),
   }
 }
