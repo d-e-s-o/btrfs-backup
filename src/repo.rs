@@ -17,6 +17,7 @@ use anyhow::Result;
 use crate::btrfs::Btrfs;
 use crate::snapshot::Snapshot;
 use crate::snapshot::SnapshotBase;
+use crate::util::normalize;
 
 
 /// Check if a given directory represents the root of a btrfs file
@@ -140,11 +141,30 @@ fn is_dir(path: &Path) -> Result<bool> {
   }
 }
 
+
 /// Restore a subvolume from a source repository.
 pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Result<()> {
+  let subvol = normalize(subvol);
+  // We cannot assume that `subvol` actually references an existing
+  // directory/subvolume (because the entire point is to restore it!).
+  // Hence, we cannot use `canonicalize` directly. So instead we ensure
+  // that all parent directories exist and then canonicalize them. Then
+  // we just join the result with the subvolume name itself.
+  let subvol = if let Some(parent) = subvol.parent() {
+    let () = create_dir_all(parent)?;
+    let parent = canonicalize(parent)?;
+    // SANITY: If there is a parent there has to be a file name as well,
+    //         because we normalized and are sure that current and
+    //         parent directory markers are no longer present.
+    let file_name = subvol.file_name().unwrap();
+    parent.join(file_name)
+  } else {
+    subvol
+  };
+
   let snapshots = src.snapshots()?;
   let (snapshot, _generation) =
-    find_most_recent_snapshot(&snapshots, subvol)?.with_context(|| {
+    find_most_recent_snapshot(&snapshots, &subvol)?.with_context(|| {
       // In case the given source repository does not contain any snapshots
       // for the given subvolume we cannot do anything but signal that to
       // the user.
@@ -161,7 +181,7 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
   // there is a directory where 'subvolume' points to, the command will
   // just manifest the new subvolume in this directory. So explicitly
   // guard against this case here.
-  if !snapshot_only && is_dir(subvol)? {
+  if !snapshot_only && is_dir(&subvol)? {
     bail!(
       "Cannot restore subvolume {}: a directory with this name exists",
       subvol.display()
@@ -178,7 +198,7 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
     let readonly = true;
     let () = dst
       .btrfs
-      .snapshot(&dst.path().join(snapshot.to_string()), subvol, !readonly)?;
+      .snapshot(&dst.path().join(snapshot.to_string()), &subvol, !readonly)?;
   }
   Ok(())
 }
@@ -228,11 +248,12 @@ impl Repo {
   /// If an up-to-date snapshot is present already, just return it
   /// directly.
   pub fn snapshot(&self, subvol: &Path) -> Result<Snapshot> {
+    let subvol = canonicalize(subvol)?;
     let snapshots = self.snapshots()?;
-    let most_recent = find_most_recent_snapshot(&snapshots, subvol)?;
+    let most_recent = find_most_recent_snapshot(&snapshots, &subvol)?;
 
     let parent = if let Some((snapshot, generation)) = most_recent {
-      let has_changes = self.btrfs.has_changes(subvol, *generation)?;
+      let has_changes = self.btrfs.has_changes(&subvol, *generation)?;
       if !has_changes {
         return Ok(snapshot.clone())
       }
@@ -244,7 +265,7 @@ impl Repo {
     // At this point we know that we have to create a new snapshot for
     // the given subvolume, either because no snapshot was present or
     // because the subvolume has changed since it had been captured.
-    let mut snapshot = Snapshot::from_subvol_path(subvol)?;
+    let mut snapshot = Snapshot::from_subvol_path(&subvol)?;
     debug_assert_eq!(snapshot.number, None);
 
     // `parent` here is just referring to the most recent snapshot.
@@ -266,7 +287,7 @@ impl Repo {
 
     let readonly = true;
     let snapshot_path = self.path().join(snapshot.to_string());
-    let () = self.btrfs.snapshot(subvol, &snapshot_path, readonly)?;
+    let () = self.btrfs.snapshot(&subvol, &snapshot_path, readonly)?;
     Ok(snapshot)
   }
 
@@ -326,6 +347,7 @@ mod tests {
 
   use std::fs::read_to_string;
   use std::fs::write;
+  use std::os::unix::fs::symlink;
 
   use serial_test::serial;
 
@@ -505,6 +527,32 @@ mod tests {
     })
   }
 
+  /// Check that subvolume paths are canocicalized for backup.
+  #[test]
+  #[serial]
+  fn backup_subvolume_canonicalized() {
+    with_two_btrfs(|src_root, dst_root| {
+      let src = Repo::new(src_root).unwrap();
+      let dst = Repo::new(dst_root).unwrap();
+
+      let btrfs = Btrfs::new();
+      let subvol = src_root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let () = write(subvol.join("file"), "test42").unwrap();
+
+      let snapshot = backup(&src, &dst, &subvol).unwrap();
+
+      let link = src_root.join("symlink");
+      let () = symlink(subvol, &link).unwrap();
+      let new_snapshot = backup(&src, &dst, &link).unwrap();
+      assert_eq!(new_snapshot, snapshot);
+
+      let subvol = src_root.join("subvol").join("..").join("subvol");
+      let new_snapshot = backup(&src, &dst, &subvol).unwrap();
+      assert_eq!(new_snapshot, snapshot);
+    })
+  }
+
   /// Check that we can backup a subvolume mounted with the `subvol`
   /// option.
   #[test]
@@ -663,6 +711,34 @@ mod tests {
 
       // The snapshot should be back with the respective content.
       let content = read_to_string(src.path().join(snapshot.to_string()).join("file")).unwrap();
+      assert_eq!(content, "test42");
+    })
+  }
+
+  /// Check that subvolume paths are canocicalized for restoration.
+  #[test]
+  #[serial]
+  fn restore_canonicalized() {
+    with_two_btrfs(|src_root, dst_root| {
+      let src = Repo::new(src_root).unwrap();
+      let dst = Repo::new(dst_root).unwrap();
+
+      let btrfs = Btrfs::new();
+      let subvol = src_root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let () = write(subvol.join("file"), "test42").unwrap();
+
+      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      let () = src.delete(&snapshot).unwrap();
+      let () = btrfs.delete_subvol(&subvol).unwrap();
+
+      let verbose_subvol = src_root.join("subvol").join("..").join("subvol");
+      let snapshot_only = false;
+      let () = restore(&dst, &src, &verbose_subvol, snapshot_only).unwrap();
+
+      let content = read_to_string(src.path().join(snapshot.to_string()).join("file")).unwrap();
+      assert_eq!(content, "test42");
+      let content = read_to_string(subvol.join("file")).unwrap();
       assert_eq!(content, "test42");
     })
   }

@@ -7,8 +7,8 @@ use std::ffi::OsStr;
 use std::fmt::Display;
 use std::ops::Deref as _;
 use std::os::unix::ffi::OsStrExt as _;
+use std::path::Component;
 use std::path::Path;
-#[cfg(test)]
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Output;
@@ -66,6 +66,53 @@ pub fn vec_to_path_buf(vec: Vec<u8>) -> Result<PathBuf> {
   use std::os::unix::ffi::OsStringExt as _;
 
   Ok(PathBuf::from(OsString::from_vec(vec)))
+}
+
+
+/// Normalize a path, removing current and parent directory components
+/// (if possible).
+// Compared to Cargo's "reference" implementation
+// https://github.com/rust-lang/cargo/blob/fede83ccf973457de319ba6fa0e36ead454d2e20/src/cargo/util/paths.rs#L61
+// we correctly handle something like '../x' (by leaving it alone). On
+// the downside, we can end up with '..' components unresolved, if they
+// are at the beginning of the path.
+pub fn normalize(path: &Path) -> PathBuf {
+  let components = path.components();
+  let path = PathBuf::with_capacity(path.as_os_str().len());
+
+  let mut path = components.fold(path, |mut path, component| {
+    match component {
+      Component::Prefix(..) | Component::RootDir => (),
+      Component::CurDir => return path,
+      Component::ParentDir => {
+        if let Some(prev) = path.components().next_back() {
+          match prev {
+            Component::CurDir => {
+              // SANITY: We can never have a current directory component
+              //         inside `path` because we never added one to
+              //         begin with.
+              unreachable!()
+            },
+            Component::Prefix(..) | Component::RootDir | Component::ParentDir => (),
+            Component::Normal(..) => {
+              path.pop();
+              return path
+            },
+          }
+        }
+      },
+      Component::Normal(c) => {
+        path.push(c);
+        return path
+      },
+    }
+
+    path.push(component.as_os_str());
+    path
+  });
+
+  let () = path.shrink_to_fit();
+  path
 }
 
 
@@ -226,4 +273,23 @@ where
   let () = evaluate(&output1, command1, args1)?;
   let () = evaluate(&output2, command2, args2)?;
   Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+
+  /// Check that we can normalize paths as expected.
+  #[test]
+  fn path_normalization() {
+    assert_eq!(normalize(Path::new("tmp/foobar/..")), Path::new("tmp"));
+    assert_eq!(normalize(Path::new("/tmp/foobar/..")), Path::new("/tmp"));
+    assert_eq!(normalize(Path::new("/tmp/.")), Path::new("/tmp"));
+    assert_eq!(normalize(Path::new("/tmp/./blah")), Path::new("/tmp/blah"));
+    assert_eq!(normalize(Path::new("/tmp/../blah")), Path::new("/blah"));
+    assert_eq!(normalize(Path::new("foo")), Path::new("foo"));
+    assert_eq!(normalize(Path::new("../foo")), Path::new("../foo"));
+  }
 }
