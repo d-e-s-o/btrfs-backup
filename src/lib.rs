@@ -15,6 +15,7 @@ mod test;
 mod util;
 
 use std::borrow::Cow;
+use std::ffi::OsString;
 use std::path::Path;
 
 use anyhow::Context as _;
@@ -161,8 +162,12 @@ fn snapshot(snapshot: Snapshot) -> Result<()> {
 
 
 /// Run the program and report errors, if any.
-pub fn run() -> Result<()> {
-  let args = Args::parse();
+pub fn run<A, T>(args: A) -> Result<()>
+where
+  A: IntoIterator<Item = T>,
+  T: Into<OsString> + Clone,
+{
+  let args = Args::try_parse_from(args).context("failed to parse program arguments")?;
 
   if args.trace {
     let () = trace_commands();
