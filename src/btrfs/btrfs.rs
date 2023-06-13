@@ -87,7 +87,6 @@ impl Btrfs {
   }
 
   /// Create a subvolume.
-  #[cfg(test)]
   pub fn create_subvol(&self, subvolume: &Path) -> Result<()> {
     let args = commands::create(subvolume);
     let () = self.maybe_print(args.clone());
@@ -95,7 +94,6 @@ impl Btrfs {
   }
 
   /// Delete a subvolume.
-  #[cfg(test)]
   pub fn delete_subvol(&self, subvolume: &Path) -> Result<()> {
     let args = commands::delete(subvolume);
     let () = self.maybe_print(args.clone());

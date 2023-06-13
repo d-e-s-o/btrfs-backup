@@ -30,14 +30,14 @@ use uname::uname;
 
 /// The UTC time zone offset we use throughout the program.
 static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| {
-  if cfg!(test) {
+  if cfg!(test) || cfg!(feature = "test") {
     // SAFETY: Our tests do not mutate the environment.
     let () = unsafe { set_soundness(Soundness::Unsound) };
   }
 
   let offset = UtcOffset::current_local_offset().unwrap();
 
-  if cfg!(test) {
+  if cfg!(test) || cfg!(feature = "test") {
     // SAFETY: The call is always safe for `Soundness::Sound`.
     let () = unsafe { set_soundness(Soundness::Sound) };
   }

@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 use std::ffi::OsStr;
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
 use std::fmt::Display;
 use std::ops::Deref as _;
 use std::os::unix::ffi::OsStrExt as _;
@@ -20,7 +20,7 @@ use anyhow::Result;
 
 
 /// Join items with a character.
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
 pub fn join<I, T>(joiner: char, iter: I) -> Option<String>
 where
   I: IntoIterator<Item = T>,
@@ -60,7 +60,7 @@ pub fn bytes_to_path(bytes: &[u8]) -> Cow<'_, Path> {
 
 
 /// Convert a byte vector into a [`PathBuf`].
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
 pub fn vec_to_path_buf(vec: Vec<u8>) -> Result<PathBuf> {
   use std::ffi::OsString;
   use std::os::unix::ffi::OsStringExt as _;

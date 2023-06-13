@@ -7,11 +7,12 @@
 mod redefine;
 
 mod args;
-mod btrfs;
+#[doc(hidden)]
+pub mod btrfs;
 mod repo;
 mod snapshot;
-#[cfg(test)]
-mod test;
+#[cfg(any(test, feature = "test"))]
+pub mod test;
 mod util;
 
 use std::borrow::Cow;

@@ -36,13 +36,11 @@ where
 
 
 /// Retrieve the command to create a new btrfs subvolume.
-#[cfg(test)]
 pub fn create(subvol: &Path) -> impl IntoIterator<Item = &OsStr> + Clone {
   ["subvolume".as_ref(), "create".as_ref(), subvol.as_os_str()]
 }
 
 /// Retrieve the command to delete a btrfs subvolume.
-#[cfg(test)]
 pub fn delete(subvol: &Path) -> impl IntoIterator<Item = &OsStr> + Clone {
   ["subvolume".as_ref(), "delete".as_ref(), subvol.as_os_str()]
 }
