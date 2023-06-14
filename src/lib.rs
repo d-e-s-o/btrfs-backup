@@ -18,6 +18,7 @@ mod util;
 use std::borrow::Cow;
 use std::ffi::OsString;
 use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::Context as _;
 use anyhow::Result;
@@ -49,6 +50,41 @@ fn create_repo(directory: &Path) -> Result<Repo> {
 }
 
 
+/// Perform an operation on a bunch of subvolumes, providing either a
+/// single repository at the provided path or create a new one
+/// co-located to each subvolume.
+fn with_repo_and_subvols<F>(repo_path: Option<&Path>, subvols: &[PathBuf], f: F) -> Result<()>
+where
+  F: FnMut(&Repo, &Path) -> Result<()>,
+{
+  let mut f = f;
+
+  let repo = if let Some(repo_path) = repo_path {
+    Some(create_repo(repo_path)?)
+  } else {
+    None
+  };
+
+  let () = subvols.iter().try_for_each::<_, Result<()>>(|subvol| {
+    let repo = if let Some(repo) = &repo {
+      Cow::Borrowed(repo)
+    } else {
+      let directory = subvol.parent().with_context(|| {
+        format!(
+          "subvolume {} does not have a parent; need repository path",
+          subvol.display()
+        )
+      })?;
+      Cow::Owned(create_repo(directory)?)
+    };
+
+    f(&repo, subvol)
+  })?;
+
+  Ok(())
+}
+
+
 /// Handler for the `backup` sub-command.
 fn backup(backup: Backup) -> Result<()> {
   let Backup {
@@ -57,33 +93,13 @@ fn backup(backup: Backup) -> Result<()> {
     source,
   } = backup;
 
-  let src = if let Some(source) = source {
-    Some(create_repo(&source)?)
-  } else {
-    None
-  };
-
   let dst = create_repo(&destination)?;
 
-  let () = subvolumes.iter().try_for_each::<_, Result<()>>(|subvol| {
-    let src = if let Some(src) = &src {
-      Cow::Borrowed(src)
-    } else {
-      let directory = subvol.parent().with_context(|| {
-        format!(
-          "subvolume {} does not have a parent; unable to store snapshots",
-          subvol.display()
-        )
-      })?;
-      Cow::Owned(create_repo(directory)?)
-    };
-
-    let _snapshot = backup_subvol(&src, &dst, subvol)
+  with_repo_and_subvols(source.as_deref(), subvolumes.as_slice(), |src, subvol| {
+    let _snapshot = backup_subvol(src, &dst, subvol)
       .with_context(|| format!("failed to backup subvolume {}", subvol.display()))?;
     Ok(())
-  })?;
-
-  Ok(())
+  })
 }
 
 
@@ -96,33 +112,17 @@ fn restore(restore: Restore) -> Result<()> {
     snapshots_only,
   } = restore;
 
-  let dst = if let Some(destination) = destination {
-    Some(create_repo(&destination)?)
-  } else {
-    None
-  };
-
   let src = create_repo(&source)?;
 
-  let () = subvolumes.iter().try_for_each::<_, Result<()>>(|subvol| {
-    let dst = if let Some(dst) = &dst {
-      Cow::Borrowed(dst)
-    } else {
-      let directory = subvol.parent().with_context(|| {
-        format!(
-          "subvolume {} does not have a parent; unable to store snapshots",
-          subvol.display()
-        )
-      })?;
-      Cow::Owned(create_repo(directory)?)
-    };
-
-    let _snapshot = restore_subvol(&src, &dst, subvol, snapshots_only)
-      .with_context(|| format!("failed to restore subvolume {}", subvol.display()))?;
-    Ok(())
-  })?;
-
-  Ok(())
+  with_repo_and_subvols(
+    destination.as_deref(),
+    subvolumes.as_slice(),
+    |dst, subvol| {
+      let _snapshot = restore_subvol(&src, dst, subvol, snapshots_only)
+        .with_context(|| format!("failed to restore subvolume {}", subvol.display()))?;
+      Ok(())
+    },
+  )
 }
 
 
@@ -133,32 +133,16 @@ fn snapshot(snapshot: Snapshot) -> Result<()> {
     subvolumes,
   } = snapshot;
 
-  let repo = if let Some(repository) = repository {
-    Some(create_repo(&repository)?)
-  } else {
-    None
-  };
-
-  let () = subvolumes.iter().try_for_each::<_, Result<()>>(|subvol| {
-    let repo = if let Some(repo) = &repo {
-      Cow::Borrowed(repo)
-    } else {
-      let directory = subvol.parent().with_context(|| {
-        format!(
-          "subvolume {} does not have a parent; unable to store snapshots",
-          subvol.display()
-        )
-      })?;
-      Cow::Owned(create_repo(directory)?)
-    };
-
-    let _snapshot = repo
-      .snapshot(subvol)
-      .with_context(|| format!("failed to snapshot subvolume {}", subvol.display()))?;
-    Ok(())
-  })?;
-
-  Ok(())
+  with_repo_and_subvols(
+    repository.as_deref(),
+    subvolumes.as_slice(),
+    |repo, subvol| {
+      let _snapshot = repo
+        .snapshot(subvol)
+        .with_context(|| format!("failed to snapshot subvolume {}", subvol.display()))?;
+      Ok(())
+    },
+  )
 }
 
 
