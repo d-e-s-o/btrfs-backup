@@ -275,13 +275,7 @@ impl Repo {
       // most recent snapshot's number incremented by one. The snapshot
       // is then guaranteed to be unique.
       if snapshot == most_recent.strip_number() {
-        snapshot.number = Some(
-          most_recent
-            .number
-            .as_ref()
-            .map(|number| number + 1)
-            .unwrap_or(0),
-        );
+        snapshot = most_recent.bump_number();
       }
     }
 

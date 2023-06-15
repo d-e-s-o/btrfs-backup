@@ -218,6 +218,14 @@ impl Snapshot {
     new
   }
 
+  /// Create a new `Snapshot` object with its number incremented by one.
+  #[inline]
+  pub fn bump_number(&self) -> Self {
+    let mut new = self.clone();
+    new.number = Some(self.number.as_ref().map(|number| number + 1).unwrap_or(0));
+    new
+  }
+
   /// Retrieve the base name of the snapshot.
   #[inline]
   pub fn as_base_name(&self) -> SnapshotBase<'_> {
