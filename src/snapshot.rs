@@ -99,10 +99,6 @@ impl Subvol {
 pub struct SnapshotBase<'snap> {
   /// See [`Snapshot::host`].
   pub host: Cow<'snap, str>,
-  /// See [`Snapshot::os`].
-  pub os: Cow<'snap, str>,
-  /// See [`Snapshot::hw`].
-  pub hw: Cow<'snap, str>,
   /// See [`Snapshot::subvol`].
   pub subvol: Cow<'snap, Subvol>,
 }
@@ -119,8 +115,6 @@ impl SnapshotBase<'_> {
     let info = uname().context("failed to retrieve uname system information")?;
     let base_name = SnapshotBase {
       host: Cow::Owned(info.nodename.to_lowercase()),
-      os: Cow::Owned(info.sysname.to_lowercase()),
-      hw: Cow::Owned(info.machine.to_lowercase()),
       subvol: Cow::Owned(Subvol::new(subvol)),
     };
     Ok(base_name)
@@ -133,10 +127,6 @@ impl SnapshotBase<'_> {
 pub struct Snapshot {
   /// The name of the host to which this snapshot belongs.
   pub host: String,
-  /// The operating system identifier of the above host.
-  pub os: String,
-  /// The above host's hardware type identifier.
-  pub hw: String,
   /// The subvolume that was snapshot.
   pub subvol: Subvol,
   /// The snapshot's time stamp.
@@ -153,7 +143,7 @@ impl Snapshot {
   /// constituent parts.
   ///
   /// The subvolume name format of a snapshot is:
-  /// <host>-<os>-<hw>-<path>-<date>_<time>
+  /// <host>-<path>-<date>_<time>
   ///
   /// It may also contain an additional <number> suffix, separated from
   /// the main name by another `-`.
@@ -170,12 +160,6 @@ impl Snapshot {
       let (host, string) = string
         .split_once('-')
         .context("subvolume name does not contain host component")?;
-      let (os, string) = string
-        .split_once('-')
-        .context("subvolume name does not contain operating system component")?;
-      let (hw, string) = string
-        .split_once('-')
-        .context("subvolume name does not contain hardware type identifier")?;
       let (path, string) = string
         .split_once('-')
         .context("subvolume name does not contain a path")?;
@@ -203,8 +187,6 @@ impl Snapshot {
 
       let slf = Snapshot {
         host: host.to_string(),
-        os: os.to_string(),
-        hw: hw.to_string(),
         subvol: Subvol::from_encoded(path.to_string()),
         timestamp: PrimitiveDateTime::new(date, time).assume_offset(*UTC_OFFSET),
         number,
@@ -224,18 +206,11 @@ impl Snapshot {
   /// together with information gathered from the system (such as the
   /// current time and date).
   pub fn from_subvol_path(subvol: &Path) -> Result<Snapshot> {
-    let SnapshotBase {
-      host,
-      os,
-      hw,
-      subvol,
-    } = SnapshotBase::from_subvol_path(subvol)?;
+    let SnapshotBase { host, subvol } = SnapshotBase::from_subvol_path(subvol)?;
     let datetime = OffsetDateTime::now_utc().to_offset(*UTC_OFFSET);
 
     let slf = Self {
       host: host.into_owned(),
-      os: os.into_owned(),
-      hw: hw.into_owned(),
       subvol: subvol.into_owned(),
       // Make sure to erase all sub-second information.
       // SANITY: 0 is always a valid millisecond.
@@ -266,8 +241,6 @@ impl Snapshot {
   pub fn as_base_name(&self) -> SnapshotBase<'_> {
     SnapshotBase {
       host: Cow::Borrowed(&self.host),
-      os: Cow::Borrowed(&self.os),
-      hw: Cow::Borrowed(&self.hw),
       subvol: Cow::Borrowed(&self.subvol),
     }
   }
@@ -285,8 +258,8 @@ impl Display for Snapshot {
 
     let () = write!(
       f,
-      "{}-{}-{}-{subvol}-{year:04}-{month:02}-{day:02}_{hour:02}:{minute:02}:{second:02}",
-      self.host, self.os, self.hw,
+      "{}-{subvol}-{year:04}-{month:02}-{day:02}_{hour:02}:{minute:02}:{second:02}",
+      self.host,
     )?;
 
     if let Some(number) = self.number {
@@ -322,11 +295,9 @@ mod tests {
   /// Check that we can parse a snapshot name and emit it back.
   #[test]
   fn snapshot_name_parsing_and_emitting() {
-    let name = OsStr::new("vaio-linux-x86_64-home_deso_media-2019-10-27_08:23:16");
+    let name = OsStr::new("vaio-home_deso_media-2019-10-27_08:23:16");
     let snapshot = Snapshot::from_snapshot_name(name).unwrap();
     assert_eq!(snapshot.host, "vaio");
-    assert_eq!(snapshot.os, "linux");
-    assert_eq!(snapshot.hw, "x86_64");
     assert_eq!(snapshot.subvol, Subvol::new(Path::new("/home/deso/media")));
     assert_eq!(
       snapshot.timestamp.date(),
@@ -339,7 +310,7 @@ mod tests {
     assert_eq!(snapshot.number, None);
     assert_eq!(OsStr::new(&snapshot.to_string()), name);
 
-    let name = OsStr::new("vaio-linux-x86_64-home_deso_media-2019-10-27_08:23:16-1");
+    let name = OsStr::new("vaio-home_deso_media-2019-10-27_08:23:16-1");
     let snapshot = Snapshot::from_snapshot_name(name).unwrap();
     assert_eq!(snapshot.number, Some(1));
     assert_eq!(OsStr::new(&snapshot.to_string()), name);
@@ -348,9 +319,9 @@ mod tests {
   /// Check that snapshot names are ordered as expected.
   #[test]
   fn snapshot_name_ordering() {
-    let name1 = OsStr::new("vaio-linux-x86_64-home_deso_media-2019-10-27_08:23:16");
+    let name1 = OsStr::new("vaio-home_deso_media-2019-10-27_08:23:16");
     let snapshot1 = Snapshot::from_snapshot_name(name1).unwrap();
-    let name2 = OsStr::new("vaio-linux-x86_64-home_deso_media-2019-10-27_08:23:16-1");
+    let name2 = OsStr::new("vaio-home_deso_media-2019-10-27_08:23:16-1");
     let snapshot2 = Snapshot::from_snapshot_name(name2).unwrap();
 
     assert_eq!(snapshot1.cmp(&snapshot2), Ordering::Less);
