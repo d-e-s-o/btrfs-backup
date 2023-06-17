@@ -345,6 +345,7 @@ mod tests {
 
   use serial_test::serial;
 
+  use crate::snapshot::Subvol;
   use crate::test::with_btrfs;
   use crate::test::with_two_btrfs;
   use crate::test::BtrfsDev;
@@ -448,7 +449,7 @@ mod tests {
       assert_eq!(snapshots.len(), 1);
 
       let next = snapshots.next().unwrap();
-      assert_eq!(next.0.subvol, subvol);
+      assert_eq!(next.0.subvol, Subvol::new(&subvol));
       assert_eq!(next.0.subvol, snapshot.subvol);
       assert_ne!(next.1, 0);
     })

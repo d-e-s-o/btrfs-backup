@@ -7,7 +7,6 @@ use std::fmt::Display;
 use std::fmt::Formatter;
 use std::fmt::Result as FmtResult;
 use std::path::Path;
-use std::path::PathBuf;
 use std::path::MAIN_SEPARATOR;
 use std::str::FromStr as _;
 
@@ -46,6 +45,50 @@ static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| {
 });
 
 
+/// A type identifying a subvolume.
+///
+/// The subvolume is stored in encoded form. Encoding it is a lossy and
+/// non-reversible transformation. As a result, we cannot actually
+/// retrieve back the subvolume path, but we can tell when a provided
+/// path is for this `Subvol` (however, there is the potential for
+/// collisions, where two subvolume paths map to the same `Subvol`
+/// object, but they are rare and we ignore them).
+#[derive(Clone, Debug, Eq, Ord, PartialOrd, PartialEq)]
+pub struct Subvol {
+  /// The subvolume being referenced, in encoded form.
+  encoded: String,
+}
+
+impl Subvol {
+  /// Create a new `Subvol` object for a subvolume at the provided path.
+  pub fn new(subvol: &Path) -> Self {
+    Self {
+      encoded: Self::to_encoded_string(subvol),
+    }
+  }
+
+  /// Create a `Subvol` object from an already encoded string.
+  fn from_encoded(subvol: String) -> Self {
+    Self { encoded: subvol }
+  }
+
+  /// A helper method for encoding the provided path.
+  fn to_encoded_string(path: &Path) -> String {
+    // TODO: Need to properly escape separating characters in the
+    //       various strings.
+    path
+      .to_string_lossy()
+      .trim_matches(MAIN_SEPARATOR)
+      .replace(MAIN_SEPARATOR, "_")
+  }
+
+  /// Retrieve the encoded representation of the subvolume.
+  fn as_encoded_str(&self) -> &str {
+    &self.encoded
+  }
+}
+
+
 /// A type representing the base name of a snapshot.
 ///
 /// The base name is the part of the first part of a snapshot's name
@@ -61,7 +104,7 @@ pub struct SnapshotBase<'snap> {
   /// See [`Snapshot::hw`].
   pub hw: Cow<'snap, str>,
   /// See [`Snapshot::subvol`].
-  pub subvol: Cow<'snap, Path>,
+  pub subvol: Cow<'snap, Subvol>,
 }
 
 impl SnapshotBase<'_> {
@@ -78,7 +121,7 @@ impl SnapshotBase<'_> {
       host: Cow::Owned(info.nodename.to_lowercase()),
       os: Cow::Owned(info.sysname.to_lowercase()),
       hw: Cow::Owned(info.machine.to_lowercase()),
-      subvol: Cow::Owned(subvol.to_path_buf()),
+      subvol: Cow::Owned(Subvol::new(subvol)),
     };
     Ok(base_name)
   }
@@ -94,8 +137,8 @@ pub struct Snapshot {
   pub os: String,
   /// The above host's hardware type identifier.
   pub hw: String,
-  /// The absolute path to the subvolume that was snapshot.
-  pub subvol: PathBuf,
+  /// The subvolume that was snapshot.
+  pub subvol: Subvol,
   /// The snapshot's time stamp.
   ///
   /// Time is treated as local time.
@@ -158,19 +201,11 @@ impl Snapshot {
         })
         .transpose()?;
 
-      let subvol = path.split('_').fold(
-        PathBuf::from(MAIN_SEPARATOR.to_string()),
-        |mut path, component| {
-          path.push(component);
-          path
-        },
-      );
-
       let slf = Snapshot {
         host: host.to_string(),
         os: os.to_string(),
         hw: hw.to_string(),
-        subvol,
+        subvol: Subvol::from_encoded(path.to_string()),
         timestamp: PrimitiveDateTime::new(date, time).assume_offset(*UTC_OFFSET),
         number,
       };
@@ -240,13 +275,7 @@ impl Snapshot {
 
 impl Display for Snapshot {
   fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-    // TODO: Need to properly escape separating characters in the
-    //       various strings.
-    let subvol = self
-      .subvol
-      .to_string_lossy()
-      .trim_matches(MAIN_SEPARATOR)
-      .replace(MAIN_SEPARATOR, "_");
+    let subvol = self.subvol.as_encoded_str();
     let year = self.timestamp.year();
     let month = self.timestamp.month() as u8;
     let day = self.timestamp.day();
@@ -298,7 +327,7 @@ mod tests {
     assert_eq!(snapshot.host, "vaio");
     assert_eq!(snapshot.os, "linux");
     assert_eq!(snapshot.hw, "x86_64");
-    assert_eq!(snapshot.subvol, Path::new("/home/deso/media"));
+    assert_eq!(snapshot.subvol, Subvol::new(Path::new("/home/deso/media")));
     assert_eq!(
       snapshot.timestamp.date(),
       Date::from_calendar_date(2019, Month::October, 27).unwrap()
