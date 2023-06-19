@@ -27,6 +27,13 @@ use time::UtcOffset;
 
 use uname::uname;
 
+/// The "character" we use for encoding path separators.
+///
+/// This is a `&str` because while conceptually representable as `char`,
+/// the latter is utterly hard to work with and the functions we use
+/// this constant with all interoperate much more nicely with `&str`.
+const ENCODED_PATH_SEPARATOR: &str = "_";
+
 /// The UTC time zone offset we use throughout the program.
 static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| {
   if cfg!(test) || cfg!(feature = "test") {
@@ -79,7 +86,7 @@ impl Subvol {
     path
       .to_string_lossy()
       .trim_matches(MAIN_SEPARATOR)
-      .replace(MAIN_SEPARATOR, "_")
+      .replace(MAIN_SEPARATOR, ENCODED_PATH_SEPARATOR)
   }
 
   /// Retrieve the encoded representation of the subvolume.
