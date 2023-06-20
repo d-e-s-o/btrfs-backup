@@ -33,6 +33,10 @@ use uname::uname;
 /// the latter is utterly hard to work with and the functions we use
 /// this constant with all interoperate much more nicely with `&str`.
 const ENCODED_PATH_SEPARATOR: &str = "_";
+/// The "character" we use for separating the individual components
+/// (such as host name and subvolume path) from each other in snapshot
+/// names.
+const ENCODED_COMPONENT_SEPARATOR: &str = "-";
 
 /// The UTC time zone offset we use throughout the program.
 static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| {
@@ -165,16 +169,16 @@ impl Snapshot {
       //       components correctly. What we'd really need is proper
       //       infrastructure for escaping those characters.
       let (host, string) = string
-        .split_once('-')
+        .split_once(ENCODED_COMPONENT_SEPARATOR)
         .context("subvolume name does not contain host component")?;
       let (path, string) = string
-        .split_once('-')
+        .split_once(ENCODED_COMPONENT_SEPARATOR)
         .context("subvolume name does not contain a path")?;
       let (date, string) = string
         .split_once('_')
         .context("subvolume name does not contain snapshot date")?;
 
-      let (time, number) = string.split_once('-').unzip();
+      let (time, number) = string.split_once(ENCODED_COMPONENT_SEPARATOR).unzip();
       let time = time.unwrap_or(string);
 
       let format = format_description!("[hour]:[minute]:[second]");
@@ -255,6 +259,7 @@ impl Snapshot {
 
 impl Display for Snapshot {
   fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+    let sep = ENCODED_COMPONENT_SEPARATOR;
     let subvol = self.subvol.as_encoded_str();
     let year = self.timestamp.year();
     let month = self.timestamp.month() as u8;
@@ -265,12 +270,12 @@ impl Display for Snapshot {
 
     let () = write!(
       f,
-      "{}-{subvol}-{year:04}-{month:02}-{day:02}_{hour:02}:{minute:02}:{second:02}",
+      "{}{sep}{subvol}{sep}{year:04}{sep}{month:02}{sep}{day:02}_{hour:02}:{minute:02}:{second:02}",
       self.host,
     )?;
 
     if let Some(number) = self.number {
-      let () = write!(f, "-{number}")?;
+      let () = write!(f, "{sep}{number}")?;
     }
     Ok(())
   }
