@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fmt::Display;
+use std::fmt::Error as FmtError;
 use std::fmt::Formatter;
 use std::fmt::Result as FmtResult;
 use std::path::Path;
@@ -16,7 +17,14 @@ use anyhow::Result;
 
 use once_cell::sync::Lazy;
 
-use time::macros::format_description;
+use time::format_description::modifier::Day;
+use time::format_description::modifier::Hour;
+use time::format_description::modifier::Minute;
+use time::format_description::modifier::Month;
+use time::format_description::modifier::Second;
+use time::format_description::modifier::Year;
+use time::format_description::Component;
+use time::format_description::FormatItem;
 use time::util::local_offset::set_soundness;
 use time::util::local_offset::Soundness;
 use time::Date;
@@ -54,6 +62,24 @@ static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| {
 
   offset
 });
+
+/// The date format used in snapshot names.
+const DATE_FORMAT: [FormatItem<'static>; 5] = [
+  FormatItem::Component(Component::Year(Year::default())),
+  FormatItem::Literal(b"-"),
+  FormatItem::Component(Component::Month(Month::default())),
+  FormatItem::Literal(b"-"),
+  FormatItem::Component(Component::Day(Day::default())),
+];
+
+/// The time format used in snapshot names.
+const TIME_FORMAT: [FormatItem<'static>; 5] = [
+  FormatItem::Component(Component::Hour(Hour::default())),
+  FormatItem::Literal(b":"),
+  FormatItem::Component(Component::Minute(Minute::default())),
+  FormatItem::Literal(b":"),
+  FormatItem::Component(Component::Second(Second::default())),
+];
 
 
 /// A type identifying a subvolume.
@@ -181,12 +207,10 @@ impl Snapshot {
       let (time, number) = string.split_once(ENCODED_COMPONENT_SEPARATOR).unzip();
       let time = time.unwrap_or(string);
 
-      let format = format_description!("[hour]:[minute]:[second]");
-      let time = Time::parse(time, &format)
+      let time = Time::parse(time, TIME_FORMAT.as_slice())
         .with_context(|| format!("failed to parse snapshot time string: {time}"))?;
 
-      let format = format_description!("[year]-[month]-[day]");
-      let date = Date::parse(date, &format)
+      let date = Date::parse(date, DATE_FORMAT.as_slice())
         .with_context(|| format!("failed to parse snapshot date string: {date}"))?;
 
       let number = number
@@ -260,18 +284,22 @@ impl Snapshot {
 impl Display for Snapshot {
   fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
     let sep = ENCODED_COMPONENT_SEPARATOR;
-    let subvol = self.subvol.as_encoded_str();
-    let year = self.timestamp.year();
-    let month = self.timestamp.month() as u8;
-    let day = self.timestamp.day();
-    let hour = self.timestamp.hour();
-    let minute = self.timestamp.minute();
-    let second = self.timestamp.second();
 
     let () = write!(
       f,
-      "{}{sep}{subvol}{sep}{year:04}{sep}{month:02}{sep}{day:02}_{hour:02}:{minute:02}:{second:02}",
-      self.host,
+      "{host}{sep}{subvol}{sep}{date}_{time}",
+      host = self.host,
+      subvol = self.subvol.as_encoded_str(),
+      date = self
+        .timestamp
+        .date()
+        .format(DATE_FORMAT.as_slice())
+        .map_err(|_err| FmtError)?,
+      time = self
+        .timestamp
+        .time()
+        .format(TIME_FORMAT.as_slice())
+        .map_err(|_err| FmtError)?,
     )?;
 
     if let Some(number) = self.number {
