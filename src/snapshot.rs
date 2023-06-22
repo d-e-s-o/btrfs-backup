@@ -35,16 +35,16 @@ use time::UtcOffset;
 
 use uname::uname;
 
-/// The "character" we use for encoding path separators.
+/// The "character" we use for separating intra-component pieces.
 ///
 /// This is a `&str` because while conceptually representable as `char`,
 /// the latter is utterly hard to work with and the functions we use
 /// this constant with all interoperate much more nicely with `&str`.
-const ENCODED_PATH_SEPARATOR: &str = "_";
+const ENCODED_INTRA_COMPONENT_SEPARATOR: &str = "-";
 /// The "character" we use for separating the individual components
 /// (such as host name and subvolume path) from each other in snapshot
 /// names.
-const ENCODED_COMPONENT_SEPARATOR: &str = "-";
+const ENCODED_COMPONENT_SEPARATOR: &str = "_";
 
 /// The UTC time zone offset we use throughout the program.
 static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| {
@@ -66,9 +66,9 @@ static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| {
 /// The date format used in snapshot names.
 const DATE_FORMAT: [FormatItem<'static>; 5] = [
   FormatItem::Component(Component::Year(Year::default())),
-  FormatItem::Literal(b"-"),
+  FormatItem::Literal(ENCODED_INTRA_COMPONENT_SEPARATOR.as_bytes()),
   FormatItem::Component(Component::Month(Month::default())),
-  FormatItem::Literal(b"-"),
+  FormatItem::Literal(ENCODED_INTRA_COMPONENT_SEPARATOR.as_bytes()),
   FormatItem::Component(Component::Day(Day::default())),
 ];
 
@@ -116,7 +116,7 @@ impl Subvol {
     path
       .to_string_lossy()
       .trim_matches(MAIN_SEPARATOR)
-      .replace(MAIN_SEPARATOR, ENCODED_PATH_SEPARATOR)
+      .replace(MAIN_SEPARATOR, ENCODED_INTRA_COMPONENT_SEPARATOR)
   }
 
   /// Retrieve the encoded representation of the subvolume.
@@ -201,7 +201,7 @@ impl Snapshot {
         .split_once(ENCODED_COMPONENT_SEPARATOR)
         .context("subvolume name does not contain a path")?;
       let (date, string) = string
-        .split_once('_')
+        .split_once(ENCODED_COMPONENT_SEPARATOR)
         .context("subvolume name does not contain snapshot date")?;
 
       let (time, number) = string.split_once(ENCODED_COMPONENT_SEPARATOR).unzip();
@@ -287,7 +287,7 @@ impl Display for Snapshot {
 
     let () = write!(
       f,
-      "{host}{sep}{subvol}{sep}{date}_{time}",
+      "{host}{sep}{subvol}{sep}{date}{sep}{time}",
       host = self.host,
       subvol = self.subvol.as_encoded_str(),
       date = self
@@ -335,7 +335,7 @@ mod tests {
   /// Check that we can parse a snapshot name and emit it back.
   #[test]
   fn snapshot_name_parsing_and_emitting() {
-    let name = OsStr::new("vaio-home_deso_media-2019-10-27_08:23:16");
+    let name = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16");
     let snapshot = Snapshot::from_snapshot_name(name).unwrap();
     assert_eq!(snapshot.host, "vaio");
     assert_eq!(snapshot.subvol, Subvol::new(Path::new("/home/deso/media")));
@@ -350,7 +350,7 @@ mod tests {
     assert_eq!(snapshot.number, None);
     assert_eq!(OsStr::new(&snapshot.to_string()), name);
 
-    let name = OsStr::new("vaio-home_deso_media-2019-10-27_08:23:16-1");
+    let name = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16_1");
     let snapshot = Snapshot::from_snapshot_name(name).unwrap();
     assert_eq!(snapshot.number, Some(1));
     assert_eq!(OsStr::new(&snapshot.to_string()), name);
@@ -359,9 +359,9 @@ mod tests {
   /// Check that snapshot names are ordered as expected.
   #[test]
   fn snapshot_name_ordering() {
-    let name1 = OsStr::new("vaio-home_deso_media-2019-10-27_08:23:16");
+    let name1 = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16");
     let snapshot1 = Snapshot::from_snapshot_name(name1).unwrap();
-    let name2 = OsStr::new("vaio-home_deso_media-2019-10-27_08:23:16-1");
+    let name2 = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16_1");
     let snapshot2 = Snapshot::from_snapshot_name(name2).unwrap();
 
     assert_eq!(snapshot1.cmp(&snapshot2), Ordering::Less);
