@@ -276,10 +276,134 @@ where
 }
 
 
+/// Escape all occurrences of `character` in `string`.
+///
+/// # Panics
+/// The function panics if `character` is anything but a single ASCII
+/// character string.
+pub fn escape(character: &str, string: &str) -> String {
+  debug_assert_eq!(
+    character.len(),
+    1,
+    "string to escape (`{character}`) is not a single ASCII character"
+  );
+
+  // We escape characters by duplicating them.
+  string.replace(character, &(character.to_owned() + character))
+}
+
+
+/// Unescape all occurrences of `character` in `string`.
+///
+/// # Panics
+/// The function panics if `character` is anything but a single ASCII
+/// character string.
+pub fn unescape(character: &str, string: &str) -> String {
+  debug_assert_eq!(
+    character.len(),
+    1,
+    "string to escape (`{character}`) is not a single ASCII character"
+  );
+  string.replace(&(character.to_owned() + character), character)
+}
+
+
+/// Split the provided `string` at the first occurrence of `character`
+/// that has not been escaped. `character` is escaped if it is
+/// immediately followed by another instance of `character`.
+///
+/// # Panics
+/// The function panics if `character` is anything but a single ASCII
+/// character string.
+pub fn split_once_escaped<'str>(
+  string: &'str str,
+  character: &str,
+) -> Option<(&'str str, &'str str)> {
+  debug_assert_eq!(
+    character.len(),
+    1,
+    "string to escape (`{character}`) is not a single ASCII character"
+  );
+  debug_assert!(string.is_ascii(), "{string}");
+
+  let mut substr = string;
+  let mut subidx = 0usize;
+
+  while let Some(idx) = substr.find(character) {
+    // Skip the character we just found.
+    let mut next_idx = idx + 1;
+    let next_str = substr.get(next_idx..)?;
+
+    if !next_str.starts_with(character) {
+      // If the character has not been escaped, we found our match.
+      let first = string.get(..subidx + idx).unwrap();
+      return Some((first, next_str))
+    } else {
+      next_idx += 1;
+    }
+
+    substr = substr.get(next_idx..)?;
+    subidx += next_idx;
+  }
+  None
+}
+
+
 #[cfg(test)]
 mod tests {
   use super::*;
 
+
+  /// Verify that we can escape characters in strings and unescape them
+  /// again.
+  #[test]
+  fn escape_unescape() {
+    /// Check correctness of encoding and decoding functionality.
+    fn test(string: &str, expected: &str) {
+      let escaped = escape("_", string);
+      assert_eq!(escaped, expected);
+
+      let unescaped = unescape("_", &escaped);
+      assert_eq!(unescaped, string);
+    }
+
+    test("", "");
+    test("_", "__");
+    test("a_", "a__");
+    test("_a_", "__a__");
+    test("a_b", "a__b");
+    test("a__b", "a____b");
+    test("a_b_c_d", "a__b__c__d");
+    test("a_b_c_d__", "a__b__c__d____");
+  }
+
+  /// Check that we can split a string at certain separation characters,
+  /// but handle escaped characters correctly.
+  #[test]
+  fn escaped_splitting() {
+    assert_eq!(split_once_escaped("foo", "_"), None);
+    assert_eq!(split_once_escaped("foo_", "_"), Some(("foo", "")));
+    assert_eq!(split_once_escaped("foo_bar", "_"), Some(("foo", "bar")));
+    assert_eq!(
+      split_once_escaped("foo_bar_baz", "_"),
+      Some(("foo", "bar_baz"))
+    );
+    assert_eq!(
+      split_once_escaped("foo__bar_baz", "_"),
+      Some(("foo__bar", "baz"))
+    );
+    assert_eq!(
+      split_once_escaped("foo_bar__baz", "_"),
+      Some(("foo", "bar__baz"))
+    );
+    assert_eq!(split_once_escaped("foo__bar", "_"), None);
+    assert_eq!(split_once_escaped("foo__", "_"), None);
+    assert_eq!(split_once_escaped("foo__bar__baz", "_"), None);
+    assert_eq!(split_once_escaped("_bar_baz", "_"), Some(("", "bar_baz")));
+    assert_eq!(split_once_escaped("__bar_baz", "_"), Some(("__bar", "baz")));
+    assert_eq!(split_once_escaped("_", "_"), Some(("", "")));
+    assert_eq!(split_once_escaped("__", "_"), None);
+  }
 
   /// Check that we can normalize paths as expected.
   #[test]
