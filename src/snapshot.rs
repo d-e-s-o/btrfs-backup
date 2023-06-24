@@ -35,6 +35,11 @@ use time::UtcOffset;
 
 use uname::uname;
 
+use crate::util::escape;
+use crate::util::split_once_escaped;
+use crate::util::unescape;
+
+
 /// The "character" we use for separating intra-component pieces.
 ///
 /// This is a `&str` because while conceptually representable as `char`,
@@ -111,12 +116,12 @@ impl Subvol {
 
   /// A helper method for encoding the provided path.
   fn to_encoded_string(path: &Path) -> String {
-    // TODO: Need to properly escape separating characters in the
-    //       various strings.
-    path
-      .to_string_lossy()
+    let string = path.to_string_lossy();
+    let string = escape(ENCODED_COMPONENT_SEPARATOR, &string);
+    let string = string
       .trim_matches(MAIN_SEPARATOR)
-      .replace(MAIN_SEPARATOR, ENCODED_INTRA_COMPONENT_SEPARATOR)
+      .replace(MAIN_SEPARATOR, ENCODED_INTRA_COMPONENT_SEPARATOR);
+    string
   }
 
   /// Retrieve the encoded representation of the subvolume.
@@ -191,14 +196,9 @@ impl Snapshot {
       let string = subvol
         .to_str()
         .context("subvolume name is not a valid UTF-8 string")?;
-      // TODO: We cannot handle '-' separators *within* the various
-      //       components correctly. What we'd really need is proper
-      //       infrastructure for escaping those characters.
-      let (host, string) = string
-        .split_once(ENCODED_COMPONENT_SEPARATOR)
+      let (host, string) = split_once_escaped(string, ENCODED_COMPONENT_SEPARATOR)
         .context("subvolume name does not contain host component")?;
-      let (path, string) = string
-        .split_once(ENCODED_COMPONENT_SEPARATOR)
+      let (path, string) = split_once_escaped(string, ENCODED_COMPONENT_SEPARATOR)
         .context("subvolume name does not contain a path")?;
       let (date, string) = string
         .split_once(ENCODED_COMPONENT_SEPARATOR)
@@ -221,7 +221,7 @@ impl Snapshot {
         .transpose()?;
 
       let slf = Snapshot {
-        host: host.to_string(),
+        host: unescape(ENCODED_COMPONENT_SEPARATOR, host),
         subvol: Subvol::from_encoded(path.to_string()),
         timestamp: PrimitiveDateTime::new(date, time).assume_offset(*UTC_OFFSET),
         number,
@@ -284,22 +284,25 @@ impl Snapshot {
 impl Display for Snapshot {
   fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
     let sep = ENCODED_COMPONENT_SEPARATOR;
+    let date = self
+      .timestamp
+      .date()
+      .format(DATE_FORMAT.as_slice())
+      .map_err(|_err| FmtError)?;
+    let time = self
+      .timestamp
+      .time()
+      .format(TIME_FORMAT.as_slice())
+      .map_err(|_err| FmtError)?;
+
+    debug_assert_eq!(escape(ENCODED_COMPONENT_SEPARATOR, &date), date);
+    debug_assert_eq!(escape(ENCODED_COMPONENT_SEPARATOR, &time), time);
 
     let () = write!(
       f,
       "{host}{sep}{subvol}{sep}{date}{sep}{time}",
-      host = self.host,
+      host = escape(ENCODED_COMPONENT_SEPARATOR, &self.host),
       subvol = self.subvol.as_encoded_str(),
-      date = self
-        .timestamp
-        .date()
-        .format(DATE_FORMAT.as_slice())
-        .map_err(|_err| FmtError)?,
-      time = self
-        .timestamp
-        .time()
-        .format(TIME_FORMAT.as_slice())
-        .map_err(|_err| FmtError)?,
     )?;
 
     if let Some(number) = self.number {
@@ -379,5 +382,21 @@ mod tests {
       snapshot2.as_base_name().cmp(&snapshot1.as_base_name()),
       Ordering::Equal
     );
+  }
+
+  /// Make sure that subvolume path comparisons for `Snapshot` objects
+  /// work as expected.
+  #[test]
+  fn snapshot_subvolume_comparison() {
+    fn test(path: &Path) {
+      let snapshot = Snapshot::from_subvol_path(path).unwrap();
+      let name = snapshot.to_string();
+      let snapshot = Snapshot::from_snapshot_name(name.as_ref()).unwrap();
+      assert_eq!(snapshot.subvol, Subvol::new(path));
+    }
+
+    test(Path::new("/snapshots/xxx_yyy"));
+    test(Path::new("/snapshots/xxx/yyy"));
+    test(Path::new("/snapshots/xxx-yyy"));
   }
 }
