@@ -17,7 +17,7 @@ use anyhow::Result;
 use crate::btrfs::Btrfs;
 use crate::snapshot::Snapshot;
 use crate::snapshot::SnapshotBase;
-use crate::util::normalize;
+use crate::util::canonicalize_non_strict;
 
 
 /// Check if a given directory represents the root of a btrfs file
@@ -144,23 +144,13 @@ fn is_dir(path: &Path) -> Result<bool> {
 
 /// Restore a subvolume from a source repository.
 pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Result<()> {
-  let subvol = normalize(subvol);
-  // We cannot assume that `subvol` actually references an existing
-  // directory/subvolume (because the entire point is to restore it!).
-  // Hence, we cannot use `canonicalize` directly. So instead we ensure
-  // that all parent directories exist and then canonicalize them. Then
-  // we just join the result with the subvolume name itself.
-  let subvol = if let Some(parent) = subvol.parent() {
+  let subvol = canonicalize_non_strict(subvol)?;
+  if let Some(parent) = subvol.parent() {
+    // The subvolume is unlikely to exist (after all, it's meant to be
+    // restored). However, given that the user wants to restore it we
+    // should make sure that the path to it exists.
     let () = create_dir_all(parent)?;
-    let parent = canonicalize(parent)?;
-    // SANITY: If there is a parent there has to be a file name as well,
-    //         because we normalized and are sure that current and
-    //         parent directory markers are no longer present.
-    let file_name = subvol.file_name().unwrap();
-    parent.join(file_name)
-  } else {
-    subvol
-  };
+  }
 
   let snapshots = src.snapshots()?;
   let (snapshot, _generation) =
