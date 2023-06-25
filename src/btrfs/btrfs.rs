@@ -280,6 +280,13 @@ impl Btrfs {
     Ok(path.to_path_buf())
   }
 
+  /// Make a subvolume read-only.
+  pub fn make_subvol_readonly(&self, subvol: &Path) -> Result<()> {
+    let args = commands::set_readonly(subvol);
+    let () = self.maybe_print(args.clone());
+    run(BTRFS, args)
+  }
+
   /// Send `send_subvolume` to `recv_destination`.
   pub fn send_recv<'input, I>(
     &self,
@@ -521,5 +528,27 @@ mod tests {
 
     let () = btrfs.send_recv(&snapshot, [], mount2.path()).unwrap();
     assert!(mount2.path().join("snapshot").exists());
+  }
+
+  /// Make sure that we can make a subvolume read-only.
+  #[test]
+  #[serial]
+  fn subvolume_readonly() {
+    with_btrfs(|root| {
+      let btrfs = Btrfs::new();
+      let subvol = root.join("root");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let () = write(subvol.join("file"), b"content").unwrap();
+
+      let () = btrfs.make_subvol_readonly(&subvol).unwrap();
+      let err = write(subvol.join("file"), b"changed-content").unwrap_err();
+      assert!(
+        err
+          .to_string()
+          .to_lowercase()
+          .contains("read-only file system"),
+        "{err}"
+      );
+    })
   }
 }

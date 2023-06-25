@@ -198,6 +198,19 @@ pub fn resolve_id(id: usize, path: &Path) -> impl IntoIterator<Item = Cow<'_, Os
 }
 
 
+/// Retrieve the command to make a subvolume read-only.
+pub fn set_readonly(path: &Path) -> impl IntoIterator<Item = Cow<'_, OsStr>> + Clone {
+  ["property".as_ref(), "set".as_ref()]
+    .into_iter()
+    .map(Cow::Borrowed)
+    .chain([
+      Cow::from(path.as_os_str()),
+      Cow::from(OsStr::new("ro")),
+      Cow::from(OsStr::new("true")),
+    ])
+}
+
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -282,5 +295,9 @@ mod tests {
       command,
       "inspect-internal subvolid-resolve 42 hihi-i-am-relative"
     );
+
+    let path = Path::new("/var/some-subvol");
+    let command = stringify_cow(set_readonly(path));
+    assert_eq!(command, "property set /var/some-subvol ro true");
   }
 }
