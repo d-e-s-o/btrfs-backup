@@ -87,6 +87,13 @@ const TIME_FORMAT: [FormatItem<'static>; 5] = [
 ];
 
 
+/// Retrieve the current local time.
+#[inline]
+pub fn current_time() -> OffsetDateTime {
+  OffsetDateTime::now_utc().to_offset(*UTC_OFFSET)
+}
+
+
 /// A type identifying a subvolume.
 ///
 /// The subvolume is stored in encoded form. Encoding it is a lossy and
@@ -242,14 +249,13 @@ impl Snapshot {
   /// current time and date).
   pub fn from_subvol_path(subvol: &Path) -> Result<Snapshot> {
     let SnapshotBase { host, subvol } = SnapshotBase::from_subvol_path(subvol)?;
-    let datetime = OffsetDateTime::now_utc().to_offset(*UTC_OFFSET);
 
     let slf = Self {
       host: host.into_owned(),
       subvol: subvol.into_owned(),
       // Make sure to erase all sub-second information.
       // SANITY: 0 is always a valid millisecond.
-      timestamp: datetime.replace_millisecond(0).unwrap(),
+      timestamp: current_time().replace_millisecond(0).unwrap(),
       number: None,
     };
     Ok(slf)

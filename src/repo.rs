@@ -276,7 +276,6 @@ impl Repo {
   }
 
   /// Delete the provided snapshot from the repository.
-  #[cfg(test)]
   pub fn delete(&self, snapshot: &Snapshot) -> Result<()> {
     let snapshot_path = self.path().join(snapshot.to_string());
     let () = self.btrfs.delete_subvol(&snapshot_path)?;

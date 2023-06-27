@@ -10,10 +10,12 @@ mod args;
 #[doc(hidden)]
 pub mod btrfs;
 mod repo;
-mod snapshot;
+#[doc(hidden)]
+pub mod snapshot;
 #[cfg(any(test, feature = "test"))]
 pub mod test;
-mod util;
+#[doc(hidden)]
+pub mod util;
 
 use std::borrow::Cow;
 use std::ffi::OsString;
@@ -28,12 +30,16 @@ use clap::Parser as _;
 use crate::args::Args;
 use crate::args::Backup;
 use crate::args::Command;
+use crate::args::Purge;
 use crate::args::Restore;
 use crate::args::Snapshot;
 use crate::btrfs::trace_commands;
 use crate::repo::backup as backup_subvol;
 use crate::repo::restore as restore_subvol;
 use crate::repo::Repo;
+use crate::snapshot::current_time;
+use crate::snapshot::Subvol;
+use crate::util::canonicalize_non_strict;
 
 
 /// A helper function for creating a btrfs repository in the provided
@@ -126,6 +132,50 @@ fn restore(restore: Restore) -> Result<()> {
 }
 
 
+/// Handler for the `purge` sub-command.
+fn purge(purge: Purge) -> Result<()> {
+  let Purge {
+    subvolumes,
+    source,
+    keep_for,
+  } = purge;
+  // TODO: This logic is arguably a bit sub-optimal for the single-repo
+  //       case, because we list snapshots for each subvolume.
+  with_repo_and_subvols(source.as_deref(), subvolumes.as_slice(), |repo, subvol| {
+    let subvol = canonicalize_non_strict(subvol)?;
+    let snapshots = repo
+      .snapshots()
+      .context("failed to list snapshots")?
+      .into_iter()
+      .map(|(snapshot, _generation)| snapshot)
+      .filter(|snapshot| snapshot.subvol == Subvol::new(&subvol));
+
+    let current_time = current_time();
+    let mut to_purge = snapshots
+      .clone()
+      .filter(|snapshot| current_time > snapshot.timestamp + keep_for);
+
+    // If we are about to delete all snapshots for the provided
+    // subvolume, make sure to keep the most recent one around.
+    if to_purge.clone().count() == snapshots.clone().count() {
+      let _skipped = to_purge.next_back();
+    }
+
+    let () = to_purge.try_for_each(|snapshot| {
+      repo.delete(&snapshot).with_context(|| {
+        format!(
+          "failed to delete snapshot {} in {}",
+          snapshot,
+          repo.path().display()
+        )
+      })
+    })?;
+
+    Ok(())
+  })
+}
+
+
 /// Handler for the `snapshot` sub-command.
 fn snapshot(snapshot: Snapshot) -> Result<()> {
   let Snapshot {
@@ -160,6 +210,7 @@ where
 
   match args.command {
     Command::Backup(backup) => self::backup(backup),
+    Command::Purge(purge) => self::purge(purge),
     Command::Restore(restore) => self::restore(restore),
     Command::Snapshot(snapshot) => self::snapshot(snapshot),
   }
