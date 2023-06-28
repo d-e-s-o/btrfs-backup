@@ -8,6 +8,7 @@
 
 use std::ffi::OsStr;
 use std::fs::create_dir_all;
+use std::path::Path;
 
 use time::Duration;
 
@@ -137,6 +138,54 @@ fn purge_snapshots() {
     // We did not ask for purge of snapshots for `subvol2`, so its
     // snapshot should have survived.
     assert!(root.join(snapshot5.to_string()).exists());
+  })
+}
+
+/// Check that we can purge old snapshots on the destination repository.
+#[test]
+#[serial]
+fn purge_destination_snapshots() {
+  with_two_btrfs(|src, dst| {
+    let btrfs = Btrfs::new();
+    let subvol = dst.join("some-subvol").join("..").join("some-subvol");
+
+    let snapshot1 = Snapshot::from_subvol_path(&normalize(&subvol)).unwrap();
+    let mut snapshot2 = snapshot1.clone();
+    snapshot2.timestamp -= Duration::weeks(1);
+    let mut snapshot3 = snapshot1.clone();
+    snapshot3.timestamp -= Duration::weeks(20);
+
+    let snapshots = [&snapshot1, &snapshot2, &snapshot3];
+
+    let () = snapshots.iter().for_each(|snapshot| {
+      let create = |root: &Path| {
+        let subvol = root.join(snapshot.to_string());
+        let () = btrfs.create_subvol(&subvol).unwrap();
+        let () = btrfs.make_subvol_readonly(&subvol).unwrap();
+      };
+
+      create(src);
+      create(dst);
+    });
+
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("purge"),
+      subvol.as_os_str(),
+      OsStr::new("--source"),
+      src.as_os_str(),
+      OsStr::new("--destination"),
+      dst.as_os_str(),
+      OsStr::new("--keep-for=2m"),
+    ];
+    let () = run(args).unwrap();
+
+    assert!(src.join(snapshot1.to_string()).exists());
+    assert!(src.join(snapshot2.to_string()).exists());
+    assert!(!src.join(snapshot3.to_string()).exists());
+    assert!(dst.join(snapshot1.to_string()).exists());
+    assert!(dst.join(snapshot2.to_string()).exists());
+    assert!(!dst.join(snapshot3.to_string()).exists());
   })
 }
 

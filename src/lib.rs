@@ -27,6 +27,8 @@ use anyhow::Result;
 
 use clap::Parser as _;
 
+use time::Duration;
+
 use crate::args::Args;
 use crate::args::Backup;
 use crate::args::Command;
@@ -134,14 +136,7 @@ fn restore(restore: Restore) -> Result<()> {
 
 /// Handler for the `purge` sub-command.
 fn purge(purge: Purge) -> Result<()> {
-  let Purge {
-    subvolumes,
-    source,
-    keep_for,
-  } = purge;
-  // TODO: This logic is arguably a bit sub-optimal for the single-repo
-  //       case, because we list snapshots for each subvolume.
-  with_repo_and_subvols(source.as_deref(), subvolumes.as_slice(), |repo, subvol| {
+  fn purge_subvol(repo: &Repo, subvol: &Path, keep_for: Duration) -> Result<()> {
     let subvol = canonicalize_non_strict(subvol)?;
     let snapshots = repo
       .snapshots()
@@ -172,6 +167,28 @@ fn purge(purge: Purge) -> Result<()> {
     })?;
 
     Ok(())
+  }
+
+
+  let Purge {
+    subvolumes,
+    source,
+    destination,
+    keep_for,
+  } = purge;
+
+  if let Some(destination) = destination {
+    let repo = create_repo(&destination)?;
+
+    let () = subvolumes
+      .iter()
+      .try_for_each(|subvol| purge_subvol(&repo, subvol, keep_for))?;
+  }
+
+  // TODO: This logic is arguably a bit sub-optimal for the single-repo
+  //       case, because we list snapshots for each subvolume.
+  with_repo_and_subvols(source.as_deref(), subvolumes.as_slice(), |repo, subvol| {
+    purge_subvol(repo, subvol, keep_for)
   })
 }
 

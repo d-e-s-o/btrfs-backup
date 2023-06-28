@@ -103,6 +103,13 @@ pub struct Purge {
   /// subvolumes provided.
   #[clap(short, long)]
   pub source: Option<PathBuf>,
+  /// An optional path to the destination "repository" to which
+  /// snapshots were backed up.
+  ///
+  /// If this option is provided, snapshots may get deleted from your
+  /// backup!
+  #[clap(short, long)]
+  pub destination: Option<PathBuf>,
   /// The duration for which to keep snapshots. E.g., 3w (three weeks)
   /// or 1m (one month). Supported suffixes are 'd' (day), 'w' (week),
   /// 'm' (month), and 'y' (year). Snapshots older than that will get
