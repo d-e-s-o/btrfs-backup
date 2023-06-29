@@ -4,6 +4,7 @@ version = "0.0.0"
 authors = ["Daniel Mueller <deso@posteo.net>"]
 edition = "2021"
 license = "GPL-3.0-or-later"
+readme = "README.md"
 description = """
 A program for backup & restoration of btrfs subvolumes.
 """
