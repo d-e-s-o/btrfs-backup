@@ -1,0 +1,9 @@
+# Copyright (C) 2023 Daniel Mueller <deso@posteo.net>
+# SPDX-License-Identifier: CC0-1.0
+
+blank_lines_lower_bound = 0
+blank_lines_upper_bound = 2
+edition = "2021"
+match_block_trailing_comma = true
+tab_spaces = 2
+trailing_semicolon = false
