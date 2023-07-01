@@ -7,7 +7,10 @@ on:
   workflow_dispatch:
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
   publish:
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -18,6 +21,6 @@ jobs:
         toolchain: stable
         override: true
     - name: Publish btrfs-backup
-      run: cargo publish --token "${CARGO_REGISTRY_TOKEN}"
+      run: cargo publish --no-verify --token "${CARGO_REGISTRY_TOKEN}"
       env:
         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
