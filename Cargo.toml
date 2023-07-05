@@ -1,11 +1,18 @@
 [package]
 name = "btrfs-backup"
-version = "0.0.0"
+version = "0.1.0"
 authors = ["Daniel Mueller <deso@posteo.net>"]
 edition = "2021"
 rust-version = "1.66"
 license = "GPL-3.0-or-later"
+homepage = "https://github.com/d-e-s-o/btrfs-backup"
+repository = "https://github.com/d-e-s-o/btrfs-backup.git"
 readme = "README.md"
+categories = [
+  "filesystem",
+  "command-line-utilities",
+]
+keywords = ["btrfs", "btrfs-backup", "backup", "cli", "filesystem"]
 description = """
 A program for backup & restoration of btrfs subvolumes.
 """
