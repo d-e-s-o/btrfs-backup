@@ -141,6 +141,56 @@ fn purge_snapshots() {
   })
 }
 
+/// Make sure that the `purge` sub-command leaves the most recent
+/// snapshot around, even if older than desired.
+#[test]
+#[serial]
+fn purge_leaves_most_recent() {
+  fn purge_leaves_most_recent_impl(src: &Path, dst: &Path, to_test: &Path) {
+    let btrfs = Btrfs::new();
+    let subvol = to_test.join("some-subvol");
+
+    let snapshot = Snapshot::from_subvol_path(&subvol).unwrap();
+    let mut snapshot1 = snapshot.clone();
+    snapshot1.timestamp -= Duration::weeks(3);
+    let mut snapshot2 = snapshot.clone();
+    snapshot2.timestamp -= Duration::weeks(4);
+    let mut snapshot3 = snapshot;
+    snapshot3.timestamp -= Duration::weeks(5);
+
+    let snapshots = [&snapshot1, &snapshot2, &snapshot3];
+
+    let () = snapshots.iter().for_each(|snapshot| {
+      let subvol = to_test.join(snapshot.to_string());
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let () = btrfs.make_subvol_readonly(&subvol).unwrap();
+    });
+
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("purge"),
+      subvol.as_os_str(),
+      OsStr::new("--source"),
+      src.as_os_str(),
+      OsStr::new("--destination"),
+      dst.as_os_str(),
+      OsStr::new("--keep-for=1w"),
+    ];
+    let () = run(args).unwrap();
+
+    // `snapshot1` is the most recent snapshot and should be kept
+    // around, despite being old.
+    assert!(to_test.join(snapshot1.to_string()).exists());
+    assert!(!to_test.join(snapshot2.to_string()).exists());
+    assert!(!to_test.join(snapshot3.to_string()).exists());
+  }
+
+  with_two_btrfs(|src, dst| {
+    purge_leaves_most_recent_impl(src, dst, src);
+    purge_leaves_most_recent_impl(src, dst, dst);
+  })
+}
+
 /// Check that we can purge old snapshots on the destination repository.
 #[test]
 #[serial]

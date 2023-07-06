@@ -114,6 +114,9 @@ pub struct Purge {
   /// or 1m (one month). Supported suffixes are 'd' (day), 'w' (week),
   /// 'm' (month), and 'y' (year). Snapshots older than that will get
   /// deleted.
+  ///
+  /// Please note that as a precaution, the most recent snapshot of a
+  /// subvolume is never deleted.
   #[arg(value_parser = parse_duration)]
   #[clap(long)]
   pub keep_for: Duration,
