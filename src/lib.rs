@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use anyhow::Context as _;
 use anyhow::Result;
 
+use clap::error::ErrorKind;
 use clap::Parser as _;
 
 use time::Duration;
@@ -219,7 +220,16 @@ where
   A: IntoIterator<Item = T>,
   T: Into<OsString> + Clone,
 {
-  let args = Args::try_parse_from(args).context("failed to parse program arguments")?;
+  let args = match Args::try_parse_from(args) {
+    Ok(args) => args,
+    Err(err) => match err.kind() {
+      ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+        print!("{}", err);
+        return Ok(())
+      },
+      _ => return Err(err).context("failed to parse program arguments"),
+    },
+  };
 
   if args.trace {
     let () = trace_commands();
@@ -230,5 +240,28 @@ where
     Command::Purge(purge) => self::purge(purge),
     Command::Restore(restore) => self::restore(restore),
     Command::Snapshot(snapshot) => self::snapshot(snapshot),
+  }
+}
+
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  use std::ffi::OsStr;
+
+
+  /// Check that we do not error out on the --version option.
+  #[test]
+  fn version() {
+    let args = [OsStr::new("btrfs-backup"), OsStr::new("--version")];
+    let () = run(args).unwrap();
+  }
+
+  /// Check that we do not error out on the --help option.
+  #[test]
+  fn help() {
+    let args = [OsStr::new("btrfs-backup"), OsStr::new("--help")];
+    let () = run(args).unwrap();
   }
 }

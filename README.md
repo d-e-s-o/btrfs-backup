@@ -5,6 +5,8 @@
 btrfs-backup
 ============
 
+- [Changelog](CHANGELOG.md)
+
 **btrfs-backup** is a program for backing up `btrfs` subvolumes in an
 incremental fashion.
 
