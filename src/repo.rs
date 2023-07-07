@@ -106,7 +106,6 @@ fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot) -> Result<()> {
   // in both repositories.
   let parents = src_snaps
     .intersection(&dst_snaps)
-    .into_iter()
     .map(|snapshot| src.path().join(snapshot.to_string()))
     .collect::<Vec<_>>();
   let parents = parents.iter().map(OsStr::new);
