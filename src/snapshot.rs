@@ -289,14 +289,19 @@ impl Snapshot {
 
 impl Display for Snapshot {
   fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+    let Snapshot {
+      host,
+      subvol,
+      timestamp,
+      number,
+    } = &self;
+
     let sep = ENCODED_COMPONENT_SEPARATOR;
-    let date = self
-      .timestamp
+    let date = timestamp
       .date()
       .format(DATE_FORMAT.as_slice())
       .map_err(|_err| FmtError)?;
-    let time = self
-      .timestamp
+    let time = timestamp
       .time()
       .format(TIME_FORMAT.as_slice())
       .map_err(|_err| FmtError)?;
@@ -307,11 +312,11 @@ impl Display for Snapshot {
     let () = write!(
       f,
       "{host}{sep}{subvol}{sep}{date}{sep}{time}",
-      host = escape(ENCODED_COMPONENT_SEPARATOR, &self.host),
-      subvol = self.subvol.as_encoded_str(),
+      host = escape(ENCODED_COMPONENT_SEPARATOR, host),
+      subvol = subvol.as_encoded_str(),
     )?;
 
-    if let Some(number) = self.number {
+    if let Some(number) = number {
       let () = write!(f, "{sep}{number}")?;
     }
     Ok(())
