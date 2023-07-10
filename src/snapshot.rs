@@ -341,8 +341,6 @@ mod tests {
     let snapshot1 = Snapshot::from_subvol_path(path1).unwrap();
     let snapshot2 = Snapshot::from_subvol_path(path2).unwrap();
 
-    dbg!(&snapshot1.subvol);
-    dbg!(&snapshot2.subvol);
     assert_eq!(snapshot1.subvol, snapshot2.subvol);
   }
 

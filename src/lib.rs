@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #![allow(clippy::let_and_return, clippy::let_unit_value)]
+#![warn(clippy::dbg_macro)]
 
 #[macro_use]
 mod redefine;
