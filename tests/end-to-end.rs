@@ -95,12 +95,14 @@ fn backup_with_distinct_repo() {
 #[test]
 #[serial]
 fn purge_snapshots() {
+  let tag = "";
+
   with_btrfs(|root| {
     let btrfs = Btrfs::new();
     let subvol1 = root.join("some-subvol").join("..").join("some-subvol");
     let subvol2 = root.join("some-other-subvol");
 
-    let snapshot1 = Snapshot::from_subvol_path(&normalize(&subvol1)).unwrap();
+    let snapshot1 = Snapshot::from_subvol_path(&normalize(&subvol1), tag).unwrap();
     let mut snapshot2 = snapshot1.clone();
     snapshot2.timestamp -= Duration::weeks(2);
     let mut snapshot3 = snapshot1.clone();
@@ -109,7 +111,7 @@ fn purge_snapshots() {
     snapshot4.timestamp -= Duration::weeks(5);
 
     // Also create a snapshot for `subvol2`.
-    let mut snapshot5 = Snapshot::from_subvol_path(&subvol2).unwrap();
+    let mut snapshot5 = Snapshot::from_subvol_path(&subvol2, tag).unwrap();
     snapshot5.timestamp -= Duration::weeks(5);
 
     let snapshots = [&snapshot1, &snapshot2, &snapshot3, &snapshot4, &snapshot5];
@@ -147,10 +149,11 @@ fn purge_snapshots() {
 #[serial]
 fn purge_leaves_most_recent() {
   fn purge_leaves_most_recent_impl(src: &Path, dst: &Path, to_test: &Path) {
+    let tag = "";
     let btrfs = Btrfs::new();
     let subvol = to_test.join("some-subvol");
 
-    let snapshot = Snapshot::from_subvol_path(&subvol).unwrap();
+    let snapshot = Snapshot::from_subvol_path(&subvol, tag).unwrap();
     let mut snapshot1 = snapshot.clone();
     snapshot1.timestamp -= Duration::weeks(3);
     let mut snapshot2 = snapshot.clone();
@@ -195,11 +198,13 @@ fn purge_leaves_most_recent() {
 #[test]
 #[serial]
 fn purge_destination_snapshots() {
+  let tag = "";
+
   with_two_btrfs(|src, dst| {
     let btrfs = Btrfs::new();
     let subvol = dst.join("some-subvol").join("..").join("some-subvol");
 
-    let snapshot1 = Snapshot::from_subvol_path(&normalize(&subvol)).unwrap();
+    let snapshot1 = Snapshot::from_subvol_path(&normalize(&subvol), tag).unwrap();
     let mut snapshot2 = snapshot1.clone();
     snapshot2.timestamp -= Duration::weeks(1);
     let mut snapshot3 = snapshot1.clone();

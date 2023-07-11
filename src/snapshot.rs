@@ -182,6 +182,8 @@ pub struct Snapshot {
   ///
   /// Time is treated as local time.
   pub timestamp: OffsetDateTime,
+  /// A tag provided by the user at some point.
+  pub tag: String,
   /// An optional number making the snapshot unique, in case the time
   /// stamp is insufficient because of its second resolution.
   pub number: Option<usize>,
@@ -192,10 +194,10 @@ impl Snapshot {
   /// constituent parts.
   ///
   /// The subvolume name format of a snapshot is:
-  /// <host>-<path>-<date>_<time>
+  /// <host>_<path>_<date>_<time>_<tag>
   ///
   /// It may also contain an additional <number> suffix, separated from
-  /// the main name by another `-`.
+  /// the main name by another `_`.
   ///
   /// <path> itself has all path separators replaced with underscores.
   pub fn from_snapshot_name(subvol: &OsStr) -> Result<Self> {
@@ -210,9 +212,11 @@ impl Snapshot {
       let (date, string) = string
         .split_once(ENCODED_COMPONENT_SEPARATOR)
         .context("subvolume name does not contain snapshot date")?;
-
-      let (time, number) = string.split_once(ENCODED_COMPONENT_SEPARATOR).unzip();
-      let time = time.unwrap_or(string);
+      let (time, string) = string
+        .split_once(ENCODED_COMPONENT_SEPARATOR)
+        .context("subvolume name does not contain snapshot time")?;
+      let (tag, number) = split_once_escaped(string, ENCODED_COMPONENT_SEPARATOR).unzip();
+      let tag = tag.unwrap_or(string);
 
       let time = Time::parse(time, TIME_FORMAT.as_slice())
         .with_context(|| format!("failed to parse snapshot time string: {time}"))?;
@@ -231,6 +235,7 @@ impl Snapshot {
         host: unescape(ENCODED_COMPONENT_SEPARATOR, host),
         subvol: Subvol::from_encoded(path.to_string()),
         timestamp: PrimitiveDateTime::new(date, time).assume_offset(*UTC_OFFSET),
+        tag: unescape(ENCODED_COMPONENT_SEPARATOR, tag),
         number,
       };
       Ok(slf)
@@ -247,7 +252,7 @@ impl Snapshot {
   /// Create a new snapshot name using the provided subvolume path
   /// together with information gathered from the system (such as the
   /// current time and date).
-  pub fn from_subvol_path(subvol: &Path) -> Result<Snapshot> {
+  pub fn from_subvol_path(subvol: &Path, tag: &str) -> Result<Snapshot> {
     let SnapshotBase { host, subvol } = SnapshotBase::from_subvol_path(subvol)?;
 
     let slf = Self {
@@ -256,6 +261,7 @@ impl Snapshot {
       // Make sure to erase all sub-second information.
       // SANITY: 0 is always a valid millisecond.
       timestamp: current_time().replace_millisecond(0).unwrap(),
+      tag: tag.to_string(),
       number: None,
     };
     Ok(slf)
@@ -293,6 +299,7 @@ impl Display for Snapshot {
       host,
       subvol,
       timestamp,
+      tag,
       number,
     } = &self;
 
@@ -306,14 +313,15 @@ impl Display for Snapshot {
       .format(TIME_FORMAT.as_slice())
       .map_err(|_err| FmtError)?;
 
-    debug_assert_eq!(escape(ENCODED_COMPONENT_SEPARATOR, &date), date);
-    debug_assert_eq!(escape(ENCODED_COMPONENT_SEPARATOR, &time), time);
+    debug_assert_eq!(escape(sep, &date), date);
+    debug_assert_eq!(escape(sep, &time), time);
 
     let () = write!(
       f,
-      "{host}{sep}{subvol}{sep}{date}{sep}{time}",
-      host = escape(ENCODED_COMPONENT_SEPARATOR, host),
+      "{host}{sep}{subvol}{sep}{date}{sep}{time}{sep}{tag}",
+      host = escape(sep, host),
       subvol = subvol.as_encoded_str(),
+      tag = escape(sep, tag),
     )?;
 
     if let Some(number) = number {
@@ -336,10 +344,11 @@ mod tests {
   /// Check that trailing path separators are handled properly.
   #[test]
   fn snapshot_trailing_path_separator_handling() {
+    let tag = "";
     let path1 = Path::new("/tmp/foobar");
     let path2 = Path::new("/tmp/foobar/");
-    let snapshot1 = Snapshot::from_subvol_path(path1).unwrap();
-    let snapshot2 = Snapshot::from_subvol_path(path2).unwrap();
+    let snapshot1 = Snapshot::from_subvol_path(path1, tag).unwrap();
+    let snapshot2 = Snapshot::from_subvol_path(path2, tag).unwrap();
 
     assert_eq!(snapshot1.subvol, snapshot2.subvol);
   }
@@ -347,10 +356,11 @@ mod tests {
   /// Check that we can parse a snapshot name and emit it back.
   #[test]
   fn snapshot_name_parsing_and_emitting() {
-    let name = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16");
+    let name = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16_");
+    let path = Path::new("/home/deso/media");
     let snapshot = Snapshot::from_snapshot_name(name).unwrap();
     assert_eq!(snapshot.host, "vaio");
-    assert_eq!(snapshot.subvol, Subvol::new(Path::new("/home/deso/media")));
+    assert_eq!(snapshot.subvol, Subvol::new(path));
     assert_eq!(
       snapshot.timestamp.date(),
       Date::from_calendar_date(2019, Month::October, 27).unwrap()
@@ -362,18 +372,24 @@ mod tests {
     assert_eq!(snapshot.number, None);
     assert_eq!(OsStr::new(&snapshot.to_string()), name);
 
-    let name = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16_1");
+    let name = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16__1");
     let snapshot = Snapshot::from_snapshot_name(name).unwrap();
     assert_eq!(snapshot.number, Some(1));
     assert_eq!(OsStr::new(&snapshot.to_string()), name);
+
+    let tag = "foo-baz_baz";
+    let snapshot = Snapshot::from_subvol_path(path, tag).unwrap();
+    let snapshot_name = snapshot.to_string();
+    let parsed = Snapshot::from_snapshot_name(snapshot_name.as_ref()).unwrap();
+    assert_eq!(parsed, snapshot);
   }
 
   /// Check that snapshot names are ordered as expected.
   #[test]
   fn snapshot_name_ordering() {
-    let name1 = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16");
+    let name1 = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16_");
     let snapshot1 = Snapshot::from_snapshot_name(name1).unwrap();
-    let name2 = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16_1");
+    let name2 = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16__1");
     let snapshot2 = Snapshot::from_snapshot_name(name2).unwrap();
 
     assert_eq!(snapshot1.cmp(&snapshot2), Ordering::Less);
@@ -398,7 +414,8 @@ mod tests {
   #[test]
   fn snapshot_subvolume_comparison() {
     fn test(path: &Path) {
-      let snapshot = Snapshot::from_subvol_path(path).unwrap();
+      let tag = "";
+      let snapshot = Snapshot::from_subvol_path(path, tag).unwrap();
       let name = snapshot.to_string();
       let snapshot = Snapshot::from_snapshot_name(name.as_ref()).unwrap();
       assert_eq!(snapshot.subvol, Subvol::new(path));
