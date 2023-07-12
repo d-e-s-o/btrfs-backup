@@ -58,14 +58,28 @@ fn find_root(btrfs: &Btrfs, directory: &Path) -> Result<PathBuf> {
 
 
 /// Find the most recent snapshot of a subvolume.
+///
+/// If `tag` is `None` then the snapshot's tag is ignored.
+///
+/// Please note that in the presence of differing tags, it is possible
+/// for this function to not actually return the absolutely most-recent
+/// snapshot, if two (or more) snapshots were created at the exact same
+/// time but with different tags, one with more up-to-date content than
+/// the other, they are considered equally up-to-date but, crucially,
+/// NOT distinguished by a number, and which one is reported depends on
+/// the lexicographical ordering of the tag. In practice it should be
+/// outstandingly rare to hit this case.
 fn find_most_recent_snapshot<'snaps>(
   snapshots: &'snaps [(Snapshot, usize)],
   subvol: &Path,
+  tag: Option<&str>,
 ) -> Result<Option<&'snaps (Snapshot, usize)>> {
   let base_name = SnapshotBase::from_subvol_path(subvol)?;
   let snapshots = snapshots
     .iter()
-    .filter(|(snapshot, _generation)| snapshot.as_base_name() == base_name)
+    .filter(|(snapshot, _generation)| {
+      snapshot.as_base_name() == base_name && (tag.is_none() || Some(snapshot.tag.as_ref()) == tag)
+    })
     .collect::<Vec<_>>();
 
   // The most recent snapshot (i.e., the one with the largest time
@@ -120,8 +134,8 @@ fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot) -> Result<()> {
 
 
 /// Backup a subvolume from a source repository to a destination.
-pub fn backup(src: &Repo, dst: &Repo, subvol: &Path) -> Result<Snapshot> {
-  let src_snap = src.snapshot(subvol)?;
+pub fn backup(src: &Repo, dst: &Repo, subvol: &Path, tag: &str) -> Result<Snapshot> {
+  let src_snap = src.snapshot(subvol, tag)?;
   let () = deploy(src, dst, &src_snap)?;
   Ok(src_snap)
 }
@@ -152,8 +166,10 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
   }
 
   let snapshots = src.snapshots()?;
-  let (snapshot, _generation) =
-    find_most_recent_snapshot(&snapshots, &subvol)?.with_context(|| {
+  // Note that for restoration purposes we always ignore the tag: we
+  // always restore from the most up-to-date snapshot.
+  let (snapshot, _generation) = find_most_recent_snapshot(&snapshots, &subvol, None)?
+    .with_context(|| {
       // In case the given source repository does not contain any snapshots
       // for the given subvolume we cannot do anything but signal that to
       // the user.
@@ -236,10 +252,12 @@ impl Repo {
   ///
   /// If an up-to-date snapshot is present already, just return it
   /// directly.
-  pub fn snapshot(&self, subvol: &Path) -> Result<Snapshot> {
+  pub fn snapshot(&self, subvol: &Path, tag: &str) -> Result<Snapshot> {
     let subvol = canonicalize(subvol)?;
     let snapshots = self.snapshots()?;
-    let most_recent = find_most_recent_snapshot(&snapshots, &subvol)?;
+    // When searching for the most recent snapshot in this context we
+    // are looking for one with not just any but this specific tag.
+    let most_recent = find_most_recent_snapshot(&snapshots, &subvol, Some(tag))?;
 
     let parent = if let Some((snapshot, generation)) = most_recent {
       let has_changes = self.btrfs.has_changes(&subvol, *generation)?;
@@ -254,7 +272,7 @@ impl Repo {
     // At this point we know that we have to create a new snapshot for
     // the given subvolume, either because no snapshot was present or
     // because the subvolume has changed since it had been captured.
-    let mut snapshot = Snapshot::from_subvol_path(&subvol, "")?;
+    let mut snapshot = Snapshot::from_subvol_path(&subvol, tag)?;
     debug_assert_eq!(snapshot.number, None);
 
     // `parent` here is just referring to the most recent snapshot.
@@ -344,6 +362,8 @@ mod tests {
   #[test]
   #[serial]
   fn snapshot_creation() {
+    let tag = "";
+
     with_btrfs(|root| {
       let btrfs = Btrfs::new();
       let subvol = root.join("subvol");
@@ -352,7 +372,7 @@ mod tests {
 
       let repo = Repo::new(root.join("repo")).unwrap();
 
-      let snapshot = repo.snapshot(&subvol).unwrap();
+      let snapshot = repo.snapshot(&subvol, tag).unwrap();
       let content = read_to_string(repo.path().join(snapshot.to_string()).join("file")).unwrap();
       assert_eq!(content, "test42");
     })
@@ -363,6 +383,8 @@ mod tests {
   #[test]
   #[serial]
   fn snapshot_creation_up_to_date() {
+    let tag = "";
+
     with_btrfs(|root| {
       let btrfs = Btrfs::new();
       let subvol = root.join("subvol");
@@ -371,8 +393,8 @@ mod tests {
 
       let repo = Repo::new(root).unwrap();
 
-      let snapshot1 = repo.snapshot(&subvol).unwrap();
-      let snapshot2 = repo.snapshot(&subvol).unwrap();
+      let snapshot1 = repo.snapshot(&subvol, tag).unwrap();
+      let snapshot2 = repo.snapshot(&subvol, tag).unwrap();
       assert_eq!(snapshot1, snapshot2);
 
       let snapshots = repo.snapshots().unwrap();
@@ -385,6 +407,8 @@ mod tests {
   #[test]
   #[serial]
   fn snapshot_creation_on_change() {
+    let tag = "";
+
     with_btrfs(|root| {
       let btrfs = Btrfs::new();
       let subvol = root.join("subvol");
@@ -393,9 +417,9 @@ mod tests {
 
       let repo = Repo::new(root).unwrap();
 
-      let snapshot1 = repo.snapshot(&subvol).unwrap();
+      let snapshot1 = repo.snapshot(&subvol, tag).unwrap();
       let () = write(subvol.join("file"), "test43").unwrap();
-      let snapshot2 = repo.snapshot(&subvol).unwrap();
+      let snapshot2 = repo.snapshot(&subvol, tag).unwrap();
       assert_ne!(snapshot1, snapshot2);
 
       let snapshots = repo.snapshots().unwrap();
@@ -425,6 +449,8 @@ mod tests {
   #[test]
   #[serial]
   fn snapshot_listing() {
+    let tag = "";
+
     with_btrfs(|root| {
       let btrfs = Btrfs::new();
       let subvol = root.join("subvol");
@@ -432,7 +458,7 @@ mod tests {
 
       let repo = Repo::new(root.join("repo")).unwrap();
 
-      let snapshot = repo.snapshot(&subvol).unwrap();
+      let snapshot = repo.snapshot(&subvol, tag).unwrap();
       let mut snapshots = repo.snapshots().unwrap().into_iter();
       assert_eq!(snapshots.len(), 1);
 
@@ -447,6 +473,8 @@ mod tests {
   #[test]
   #[serial]
   fn snapshot_outside_repo() {
+    let tag = "";
+
     with_btrfs(|root| {
       let btrfs = Btrfs::new();
       let subvol = root.join("subvol");
@@ -457,11 +485,11 @@ mod tests {
 
       // One repository in the root.
       let root_repo = Repo::new(root).unwrap();
-      let _snapshot = root_repo.snapshot(&subvol).unwrap();
+      let _snapshot = root_repo.snapshot(&subvol, tag).unwrap();
 
       // And another one below ours.
       let sub_repo = Repo::new(repo.path().join("foobar")).unwrap();
-      let _snapshot = sub_repo.snapshot(&subvol).unwrap();
+      let _snapshot = sub_repo.snapshot(&subvol, tag).unwrap();
 
       // None of the other repositories' snapshots should appear in our
       // listing.
@@ -497,6 +525,8 @@ mod tests {
   #[test]
   #[serial]
   fn backup_subvolume() {
+    let tag = "";
+
     with_two_btrfs(|src_root, dst_root| {
       let src = Repo::new(src_root).unwrap();
       let dst = Repo::new(dst_root).unwrap();
@@ -506,7 +536,7 @@ mod tests {
       let () = btrfs.create_subvol(&subvol).unwrap();
       let () = write(subvol.join("file"), "test42").unwrap();
 
-      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      let snapshot = backup(&src, &dst, &subvol, tag).unwrap();
       let content = read_to_string(dst.path().join(snapshot.to_string()).join("file")).unwrap();
       assert_eq!(content, "test42");
     })
@@ -516,6 +546,8 @@ mod tests {
   #[test]
   #[serial]
   fn backup_subvolume_canonicalized() {
+    let tag = "";
+
     with_two_btrfs(|src_root, dst_root| {
       let src = Repo::new(src_root).unwrap();
       let dst = Repo::new(dst_root).unwrap();
@@ -525,15 +557,15 @@ mod tests {
       let () = btrfs.create_subvol(&subvol).unwrap();
       let () = write(subvol.join("file"), "test42").unwrap();
 
-      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      let snapshot = backup(&src, &dst, &subvol, tag).unwrap();
 
       let link = src_root.join("symlink");
       let () = symlink(subvol, &link).unwrap();
-      let new_snapshot = backup(&src, &dst, &link).unwrap();
+      let new_snapshot = backup(&src, &dst, &link, tag).unwrap();
       assert_eq!(new_snapshot, snapshot);
 
       let subvol = src_root.join("subvol").join("..").join("subvol");
-      let new_snapshot = backup(&src, &dst, &subvol).unwrap();
+      let new_snapshot = backup(&src, &dst, &subvol, tag).unwrap();
       assert_eq!(new_snapshot, snapshot);
     })
   }
@@ -567,7 +599,8 @@ mod tests {
     let subvol = src_mount.path();
     let () = write(subvol.join("file"), "test42").unwrap();
 
-    let snapshot = backup(&src, &dst, subvol).unwrap();
+    let tag = "";
+    let snapshot = backup(&src, &dst, subvol, tag).unwrap();
     let content = read_to_string(dst.path().join(snapshot.to_string()).join("file")).unwrap();
     assert_eq!(content, "test42");
   }
@@ -577,12 +610,14 @@ mod tests {
   #[test]
   #[serial]
   fn backup_non_existent_subvolume() {
+    let tag = "";
+
     with_two_btrfs(|src_root, dst_root| {
       let src = Repo::new(src_root).unwrap();
       let dst = Repo::new(dst_root).unwrap();
 
       let subvol = src_root.join("subvol");
-      let error = backup(&src, &dst, &subvol).unwrap_err();
+      let error = backup(&src, &dst, &subvol, tag).unwrap_err();
       assert!(error.to_string().contains("No such file or directory"));
     })
   }
@@ -592,6 +627,8 @@ mod tests {
   #[test]
   #[serial]
   fn backup_subvolume_up_to_date() {
+    let tag = "";
+
     with_two_btrfs(|src_root, dst_root| {
       let src = Repo::new(src_root).unwrap();
       let dst = Repo::new(dst_root).unwrap();
@@ -600,8 +637,8 @@ mod tests {
       let subvol = src_root.join("subvol");
       let () = btrfs.create_subvol(&subvol).unwrap();
 
-      let snapshot1 = backup(&src, &dst, &subvol).unwrap();
-      let snapshot2 = backup(&src, &dst, &subvol).unwrap();
+      let snapshot1 = backup(&src, &dst, &subvol, tag).unwrap();
+      let snapshot2 = backup(&src, &dst, &subvol, tag).unwrap();
       assert_eq!(snapshot1, snapshot2);
 
       let snapshots = dst.snapshots().unwrap();
@@ -618,6 +655,8 @@ mod tests {
   #[test]
   #[serial]
   fn backup_subvolume_incremental() {
+    let tag = "";
+
     with_two_btrfs(|src_root, dst_root| {
       let src = Repo::new(src_root).unwrap();
       let dst = Repo::new(dst_root).unwrap();
@@ -626,13 +665,13 @@ mod tests {
       let subvol = src_root.join("subvol");
       let () = btrfs.create_subvol(&subvol).unwrap();
 
-      let _snapshot = backup(&src, &dst, &subvol).unwrap();
+      let _snapshot = backup(&src, &dst, &subvol, tag).unwrap();
 
       for i in 0..20 {
         let string = "test".to_string() + &i.to_string();
         let () = write(subvol.join("file"), &string).unwrap();
 
-        let snapshot = backup(&src, &dst, &subvol).unwrap();
+        let snapshot = backup(&src, &dst, &subvol, tag).unwrap();
         let content = read_to_string(dst.path().join(snapshot.to_string()).join("file")).unwrap();
         assert_eq!(content, string);
       }
@@ -643,6 +682,8 @@ mod tests {
   #[test]
   #[serial]
   fn restore_subvolume() {
+    let tag = "";
+
     with_two_btrfs(|src_root, dst_root| {
       let src = Repo::new(src_root).unwrap();
       let dst = Repo::new(dst_root).unwrap();
@@ -653,7 +694,7 @@ mod tests {
       let () = write(subvol.join("file"), "test42").unwrap();
 
       // Backup the subvolume to the destination repository.
-      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      let snapshot = backup(&src, &dst, &subvol, tag).unwrap();
       // Then remove the source snapshot and the source subvolume.
       let () = src.delete(&snapshot).unwrap();
       assert!(!src.path().join(snapshot.to_string()).join("file").exists());
@@ -679,6 +720,8 @@ mod tests {
   #[test]
   #[serial]
   fn restore_snapshot_only() {
+    let tag = "";
+
     with_two_btrfs(|src_root, dst_root| {
       let src = Repo::new(src_root).unwrap();
       let dst = Repo::new(dst_root).unwrap();
@@ -688,7 +731,7 @@ mod tests {
       let () = btrfs.create_subvol(&subvol).unwrap();
       let () = write(subvol.join("file"), "test42").unwrap();
 
-      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      let snapshot = backup(&src, &dst, &subvol, tag).unwrap();
       let () = src.delete(&snapshot).unwrap();
 
       let snapshot_only = true;
@@ -704,6 +747,8 @@ mod tests {
   #[test]
   #[serial]
   fn restore_canonicalized() {
+    let tag = "";
+
     with_two_btrfs(|src_root, dst_root| {
       let src = Repo::new(src_root).unwrap();
       let dst = Repo::new(dst_root).unwrap();
@@ -713,7 +758,7 @@ mod tests {
       let () = btrfs.create_subvol(&subvol).unwrap();
       let () = write(subvol.join("file"), "test42").unwrap();
 
-      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      let snapshot = backup(&src, &dst, &subvol, tag).unwrap();
       let () = src.delete(&snapshot).unwrap();
       let () = btrfs.delete_subvol(&subvol).unwrap();
 
@@ -733,6 +778,8 @@ mod tests {
   #[test]
   #[serial]
   fn restore_subvolume_exists() {
+    let tag = "";
+
     with_two_btrfs(|src_root, dst_root| {
       let src = Repo::new(src_root).unwrap();
       let dst = Repo::new(dst_root).unwrap();
@@ -741,7 +788,7 @@ mod tests {
       let subvol = src_root.join("subvol");
       let () = btrfs.create_subvol(&subvol).unwrap();
 
-      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      let snapshot = backup(&src, &dst, &subvol, tag).unwrap();
       // Then remove the source snapshot and the source subvolume.
       let () = src.delete(&snapshot).unwrap();
 
@@ -759,6 +806,8 @@ mod tests {
   #[test]
   #[serial]
   fn restore_subvolume_missing_snapshot() {
+    let tag = "";
+
     with_two_btrfs(|src_root, dst_root| {
       let src = Repo::new(src_root).unwrap();
       let dst = Repo::new(dst_root).unwrap();
@@ -767,7 +816,7 @@ mod tests {
       let subvol = src_root.join("subvol");
       let () = btrfs.create_subvol(&subvol).unwrap();
 
-      let snapshot = backup(&src, &dst, &subvol).unwrap();
+      let snapshot = backup(&src, &dst, &subvol, tag).unwrap();
       // Then remove the just created snapshot.
       let () = dst.delete(&snapshot).unwrap();
 

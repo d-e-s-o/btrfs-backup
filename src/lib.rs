@@ -37,6 +37,7 @@ use crate::args::Command;
 use crate::args::Purge;
 use crate::args::Restore;
 use crate::args::Snapshot;
+use crate::args::Tag;
 use crate::btrfs::trace_commands;
 use crate::repo::backup as backup_subvol;
 use crate::repo::restore as restore_subvol;
@@ -101,12 +102,13 @@ fn backup(backup: Backup) -> Result<()> {
     subvolumes,
     destination,
     source,
+    tag: Tag { tag },
   } = backup;
 
   let dst = create_repo(&destination)?;
 
   with_repo_and_subvols(source.as_deref(), subvolumes.as_slice(), |src, subvol| {
-    let _snapshot = backup_subvol(src, &dst, subvol)
+    let _snapshot = backup_subvol(src, &dst, subvol, &tag)
       .with_context(|| format!("failed to backup subvolume {}", subvol.display()))?;
     Ok(())
   })
@@ -138,14 +140,14 @@ fn restore(restore: Restore) -> Result<()> {
 
 /// Handler for the `purge` sub-command.
 fn purge(purge: Purge) -> Result<()> {
-  fn purge_subvol(repo: &Repo, subvol: &Path, keep_for: Duration) -> Result<()> {
+  fn purge_subvol(repo: &Repo, subvol: &Path, tag: &str, keep_for: Duration) -> Result<()> {
     let subvol = canonicalize_non_strict(subvol)?;
     let snapshots = repo
       .snapshots()
       .context("failed to list snapshots")?
       .into_iter()
       .map(|(snapshot, _generation)| snapshot)
-      .filter(|snapshot| snapshot.subvol == Subvol::new(&subvol));
+      .filter(|snapshot| snapshot.subvol == Subvol::new(&subvol) && snapshot.tag == tag);
 
     let current_time = current_time();
     let mut to_purge = snapshots
@@ -176,6 +178,7 @@ fn purge(purge: Purge) -> Result<()> {
     subvolumes,
     source,
     destination,
+    tag: Tag { tag },
     keep_for,
   } = purge;
 
@@ -184,13 +187,13 @@ fn purge(purge: Purge) -> Result<()> {
 
     let () = subvolumes
       .iter()
-      .try_for_each(|subvol| purge_subvol(&repo, subvol, keep_for))?;
+      .try_for_each(|subvol| purge_subvol(&repo, subvol, &tag, keep_for))?;
   }
 
   // TODO: This logic is arguably a bit sub-optimal for the single-repo
   //       case, because we list snapshots for each subvolume.
   with_repo_and_subvols(source.as_deref(), subvolumes.as_slice(), |repo, subvol| {
-    purge_subvol(repo, subvol, keep_for)
+    purge_subvol(repo, subvol, &tag, keep_for)
   })
 }
 
@@ -200,6 +203,7 @@ fn snapshot(snapshot: Snapshot) -> Result<()> {
   let Snapshot {
     repository,
     subvolumes,
+    tag: Tag { tag },
   } = snapshot;
 
   with_repo_and_subvols(
@@ -207,7 +211,7 @@ fn snapshot(snapshot: Snapshot) -> Result<()> {
     subvolumes.as_slice(),
     |repo, subvol| {
       let _snapshot = repo
-        .snapshot(subvol)
+        .snapshot(subvol, &tag)
         .with_context(|| format!("failed to snapshot subvolume {}", subvol.display()))?;
       Ok(())
     },

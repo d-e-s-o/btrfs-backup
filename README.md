@@ -42,8 +42,8 @@ $ btrfs-backup backup /.tmpjWzWMn/subvol1 /.tmpjWzWMn/subdir/subvol2 --destinati
 This command results in the following backup snapshots:
 ```sh
 $ ls -l /mnt/backup/
-> drwxr-xr-x 1 root root 0 Feb 20 11:13 <hostname>_.tmpjWzWMn-subdir-subvol2_2023-02-20_11:14:35
-> drwxr-xr-x 1 root root 0 Feb 20 11:13 <hostname>_.tmpjWzWMn-subvol1_2023-02-20_11:14:35
+> drwxr-xr-x 1 root root 0 Feb 20 11:13 <hostname>_.tmpjWzWMn-subdir-subvol2_2023-02-20_11:14:35_
+> drwxr-xr-x 1 root root 0 Feb 20 11:13 <hostname>_.tmpjWzWMn-subvol1_2023-02-20_11:14:35_
 ```
 
 The way backups work on a `btrfs` file system, a read-only snapshot of
@@ -55,7 +55,7 @@ are co-located with the actual subvolume in question (that is, they
 reside in the same parent directory):
 ```sh
 $ ls -al /.tmpjWzWMn/
-> drwxr-xr-x 1 root root   0 Feb 20 11:13 nuc_.tmpjWzWMn-subvol1_2023-02-20_11:14:35
+> drwxr-xr-x 1 root root   0 Feb 20 11:13 nuc_.tmpjWzWMn-subvol1_2023-02-20_11:14:35_
 > drwxr-xr-x 1 root root 112 Feb 20 11:14 subdir
 > drwxr-xr-x 1 root root   0 Feb 20 11:13 subvol1
 ```

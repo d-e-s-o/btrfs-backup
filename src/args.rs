@@ -31,6 +31,16 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
 }
 
 
+/// The `--tag` argument.
+#[derive(Debug, Arguments)]
+pub struct Tag {
+  /// The tag to use. The tag is stored in a snapshot's name. Only
+  /// snapshots with the same tag are considered during purge.
+  #[clap(long = "tag", default_value_t)]
+  pub tag: String,
+}
+
+
 /// A program for backup & restoration of btrfs subvolumes.
 #[derive(Debug, Parser)]
 #[clap(version = env!("VERSION"))]
@@ -70,6 +80,8 @@ pub struct Backup {
   /// to.
   #[clap(short, long)]
   pub destination: PathBuf,
+  #[command(flatten)]
+  pub tag: Tag,
 }
 
 /// An enumeration representing the `restore` command.
@@ -110,6 +122,8 @@ pub struct Purge {
   /// backup!
   #[clap(short, long)]
   pub destination: Option<PathBuf>,
+  #[command(flatten)]
+  pub tag: Tag,
   /// The duration for which to keep snapshots. E.g., 3w (three weeks)
   /// or 1m (one month). Supported suffixes are 'd' (day), 'w' (week),
   /// 'm' (month), and 'y' (year). Snapshots older than that will get
@@ -133,4 +147,6 @@ pub struct Snapshot {
   /// subvolume being snapshot.
   #[clap(short, long)]
   pub repository: Option<PathBuf>,
+  #[command(flatten)]
+  pub tag: Tag,
 }
