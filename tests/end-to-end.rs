@@ -8,6 +8,8 @@
 
 use std::ffi::OsStr;
 use std::fs::create_dir_all;
+use std::fs::read_to_string;
+use std::fs::write;
 use std::path::Path;
 
 use time::Duration;
@@ -62,6 +64,8 @@ fn backup_with_colocated_repos() {
 #[test]
 #[serial]
 fn backup_with_distinct_repo() {
+  let tag = "tagged";
+
   with_two_btrfs(|src_root, dst_root| {
     let btrfs = Btrfs::new();
 
@@ -82,6 +86,8 @@ fn backup_with_distinct_repo() {
       snapshots.as_os_str(),
       OsStr::new("--destination"),
       dst_root.as_os_str(),
+      OsStr::new("--tag"),
+      OsStr::new(tag),
     ];
     let () = run(args).unwrap();
 
@@ -139,6 +145,57 @@ fn purge_snapshots() {
     assert!(!root.join(snapshot4.to_string()).exists());
     // We did not ask for purge of snapshots for `subvol2`, so its
     // snapshot should have survived.
+    assert!(root.join(snapshot5.to_string()).exists());
+  })
+}
+
+/// Check that we can purge old snapshots as expected.
+#[test]
+#[serial]
+fn purge_leaves_differently_tagged() {
+  with_btrfs(|root| {
+    let btrfs = Btrfs::new();
+    let subvol = root.join("some-subvol");
+
+    let tag = "";
+    let snapshot1 = Snapshot::from_subvol_path(&subvol, tag).unwrap();
+    let mut snapshot2 = snapshot1.clone();
+    snapshot2.timestamp -= Duration::weeks(2);
+    let mut snapshot3 = snapshot1.clone();
+    snapshot3.timestamp -= Duration::weeks(4);
+    let mut snapshot4 = snapshot1.clone();
+    snapshot4.timestamp -= Duration::weeks(5);
+
+    // The last snapshot is outdated but differently tagged.
+    let tag = "tagged";
+    let mut snapshot5 = Snapshot::from_subvol_path(&subvol, tag).unwrap();
+    snapshot5.timestamp -= Duration::weeks(6);
+
+    let snapshots = [&snapshot1, &snapshot2, &snapshot3, &snapshot4, &snapshot5];
+
+    let () = snapshots.iter().for_each(|snapshot| {
+      let subvol = root.join(snapshot.to_string());
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      // Make the subvolumes read-only to fake actual snapshots.
+      let () = btrfs.make_subvol_readonly(&subvol).unwrap();
+    });
+
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("purge"),
+      subvol.as_os_str(),
+      OsStr::new("--source"),
+      root.as_os_str(),
+      OsStr::new("--keep-for=3w"),
+    ];
+    let () = run(args).unwrap();
+
+    assert!(root.join(snapshot1.to_string()).exists());
+    assert!(root.join(snapshot2.to_string()).exists());
+    assert!(!root.join(snapshot3.to_string()).exists());
+    assert!(!root.join(snapshot4.to_string()).exists());
+    // The last snapshot is differently tagged and should have been
+    // preserved.
     assert!(root.join(snapshot5.to_string()).exists());
   })
 }
@@ -324,6 +381,67 @@ fn restore_subvolume_snapshots() {
     let () = run(args).unwrap();
 
     assert_eq!(snapshots.read_dir().unwrap().count(), 1);
+  })
+}
+
+/// Check that subvolume restoration ignores snapshot tags.
+#[test]
+#[serial]
+fn restore_ignores_snapshot_tag() {
+  with_two_btrfs(|src_root, dst_root| {
+    let btrfs = Btrfs::new();
+
+    let snapshots = src_root.join("snapshots");
+    let subvol = src_root.join("subvol");
+    let () = create_dir_all(&snapshots).unwrap();
+    let () = btrfs.create_subvol(&subvol).unwrap();
+    let () = write(subvol.join("file"), "test-old").unwrap();
+
+    // Perform a backup without a tag.
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("backup"),
+      subvol.as_os_str(),
+      OsStr::new("--source"),
+      snapshots.as_os_str(),
+      OsStr::new("--destination"),
+      dst_root.as_os_str(),
+    ];
+    let () = run(args).unwrap();
+
+    let () = write(subvol.join("file"), "test-new").unwrap();
+
+    // Now, with the changed subvolume contents, create another backup,
+    // this time with a tag.
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("backup"),
+      subvol.as_os_str(),
+      OsStr::new("--source"),
+      snapshots.as_os_str(),
+      OsStr::new("--destination"),
+      dst_root.as_os_str(),
+      OsStr::new("--tag=foobar"),
+    ];
+    let () = run(args).unwrap();
+
+    let () = btrfs.delete_subvol(&subvol).unwrap();
+
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("restore"),
+      subvol.as_os_str(),
+      OsStr::new("--destination"),
+      snapshots.as_os_str(),
+      OsStr::new("--source"),
+      dst_root.as_os_str(),
+    ];
+    let () = run(args).unwrap();
+
+    // We did not ask for restoration from a specific tag (which is not
+    // possible), but expect the most recent snapshot to be restored.
+    let content = read_to_string(subvol.join("file")).unwrap();
+    assert_eq!(content, "test-new");
   })
 }
 

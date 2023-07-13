@@ -378,6 +378,28 @@ mod tests {
     })
   }
 
+  /// Check that we can create a snapshot with a tag.
+  #[test]
+  #[serial]
+  fn tagged_snapshot_creation() {
+    let tag = "tagged";
+
+    with_btrfs(|root| {
+      let btrfs = Btrfs::new();
+      let subvol = root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let () = write(subvol.join("file"), "test42").unwrap();
+
+      let repo = Repo::new(root.join("repo")).unwrap();
+
+      let snapshot = repo.snapshot(&subvol, tag).unwrap();
+      assert_eq!(snapshot.tag, tag);
+
+      let content = read_to_string(repo.path().join(snapshot.to_string()).join("file")).unwrap();
+      assert_eq!(content, "test42");
+    })
+  }
+
   /// Make sure that we do not create a new snapshot if a subvolume has
   /// not changed over its most recent snapshot.
   #[test]
@@ -399,6 +421,30 @@ mod tests {
 
       let snapshots = repo.snapshots().unwrap();
       assert_eq!(snapshots.len(), 1);
+    })
+  }
+
+  /// Make sure that we do create a new snapshot if an untagged
+  /// up-to-date snapshot exists, but not a tagged one.
+  #[test]
+  #[serial]
+  fn snapshot_creation_up_to_date_tagged() {
+    with_btrfs(|root| {
+      let btrfs = Btrfs::new();
+      let subvol = root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let () = write(subvol.join("file"), "test42").unwrap();
+
+      let repo = Repo::new(root).unwrap();
+
+      let tag = "";
+      let snapshot1 = repo.snapshot(&subvol, tag).unwrap();
+      let tag = "different";
+      let snapshot2 = repo.snapshot(&subvol, tag).unwrap();
+      assert_ne!(snapshot1, snapshot2);
+
+      let snapshots = repo.snapshots().unwrap();
+      assert_eq!(snapshots.len(), 2);
     })
   }
 
