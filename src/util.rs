@@ -193,12 +193,7 @@ where
     .stderr(Stdio::null())
     .args(args.clone())
     .status()
-    .with_context(|| {
-      format!(
-        "failed to run `{}`",
-        format_command(command.as_ref(), args.clone())
-      )
-    })?;
+    .with_context(|| format!("failed to run `{}`", format_command(command.as_ref(), args)))?;
 
   Ok(status.success())
 }
