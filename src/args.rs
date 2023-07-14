@@ -65,10 +65,10 @@ pub enum Command {
   Snapshot(Snapshot),
 }
 
-/// An enumeration representing the `backup` command.
+/// An type representing the `backup` command.
 #[derive(Debug, Arguments)]
 pub struct Backup {
-  /// The subvolumes to snapshot.
+  /// The subvolumes to backup.
   pub subvolumes: Vec<PathBuf>,
   /// The path to the source "repository" to create the snapshots in.
   ///
@@ -84,7 +84,7 @@ pub struct Backup {
   pub tag: Tag,
 }
 
-/// An enumeration representing the `restore` command.
+/// An type representing the `restore` command.
 #[derive(Debug, Arguments)]
 pub struct Restore {
   /// The subvolumes to restore.
@@ -104,7 +104,7 @@ pub struct Restore {
   pub snapshots_only: bool,
 }
 
-/// An enumeration representing the `purge` command.
+/// An type representing the `purge` command.
 #[derive(Debug, Arguments)]
 pub struct Purge {
   /// The subvolumes for which to purge snapshots.
@@ -136,7 +136,7 @@ pub struct Purge {
   pub keep_for: Duration,
 }
 
-/// An enumeration representing the `snapshot` command.
+/// An type representing the `snapshot` command.
 #[derive(Debug, Arguments)]
 pub struct Snapshot {
   /// The subvolumes to snapshot.
