@@ -29,8 +29,6 @@ use anyhow::Result;
 use clap::error::ErrorKind;
 use clap::Parser as _;
 
-use time::Duration;
-
 use crate::args::Args;
 use crate::args::Backup;
 use crate::args::Command;
@@ -40,11 +38,9 @@ use crate::args::Snapshot;
 use crate::args::Tag;
 use crate::btrfs::trace_commands;
 use crate::repo::backup as backup_subvol;
+use crate::repo::purge as purge_subvol;
 use crate::repo::restore as restore_subvol;
 use crate::repo::Repo;
-use crate::snapshot::current_time;
-use crate::snapshot::Subvol;
-use crate::util::canonicalize_non_strict;
 
 
 /// A helper function for creating a btrfs repository in the provided
@@ -140,40 +136,6 @@ fn restore(restore: Restore) -> Result<()> {
 
 /// Handler for the `purge` sub-command.
 fn purge(purge: Purge) -> Result<()> {
-  fn purge_subvol(repo: &Repo, subvol: &Path, tag: &str, keep_for: Duration) -> Result<()> {
-    let subvol = canonicalize_non_strict(subvol)?;
-    let snapshots = repo
-      .snapshots()
-      .context("failed to list snapshots")?
-      .into_iter()
-      .map(|(snapshot, _generation)| snapshot)
-      .filter(|snapshot| snapshot.subvol == Subvol::new(&subvol) && snapshot.tag == tag);
-
-    let current_time = current_time();
-    let mut to_purge = snapshots
-      .clone()
-      .filter(|snapshot| current_time > snapshot.timestamp + keep_for);
-
-    // If we are about to delete all snapshots for the provided
-    // subvolume, make sure to keep the most recent one around.
-    if to_purge.clone().count() == snapshots.clone().count() {
-      let _skipped = to_purge.next_back();
-    }
-
-    let () = to_purge.try_for_each(|snapshot| {
-      repo.delete(&snapshot).with_context(|| {
-        format!(
-          "failed to delete snapshot {} in {}",
-          snapshot,
-          repo.path().display()
-        )
-      })
-    })?;
-
-    Ok(())
-  }
-
-
   let Purge {
     subvolumes,
     source,

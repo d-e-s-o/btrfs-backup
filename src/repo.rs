@@ -14,9 +14,13 @@ use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Result;
 
+use time::Duration;
+
 use crate::btrfs::Btrfs;
+use crate::snapshot::current_time;
 use crate::snapshot::Snapshot;
 use crate::snapshot::SnapshotBase;
+use crate::snapshot::Subvol;
 use crate::util::canonicalize_non_strict;
 
 
@@ -205,6 +209,41 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
       .btrfs
       .snapshot(&dst.path().join(snapshot.to_string()), &subvol, !readonly)?;
   }
+  Ok(())
+}
+
+
+/// Purge old snapshots of a subvolume from the provided repository.
+pub fn purge(repo: &Repo, subvol: &Path, tag: &str, keep_for: Duration) -> Result<()> {
+  let subvol = canonicalize_non_strict(subvol)?;
+  let snapshots = repo
+    .snapshots()
+    .context("failed to list snapshots")?
+    .into_iter()
+    .map(|(snapshot, _generation)| snapshot)
+    .filter(|snapshot| snapshot.subvol == Subvol::new(&subvol) && snapshot.tag == tag);
+
+  let current_time = current_time();
+  let mut to_purge = snapshots
+    .clone()
+    .filter(|snapshot| current_time > snapshot.timestamp + keep_for);
+
+  // If we are about to delete all snapshots for the provided
+  // subvolume, make sure to keep the most recent one around.
+  if to_purge.clone().count() == snapshots.count() {
+    let _skipped = to_purge.next_back();
+  }
+
+  let () = to_purge.try_for_each(|snapshot| {
+    repo.delete(&snapshot).with_context(|| {
+      format!(
+        "failed to delete snapshot {} in {}",
+        snapshot,
+        repo.path().display()
+      )
+    })
+  })?;
+
   Ok(())
 }
 
