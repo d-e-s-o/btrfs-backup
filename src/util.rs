@@ -23,6 +23,31 @@ use anyhow::Context as _;
 use anyhow::Result;
 
 
+/// An enum used for wrapping two different iterator types.
+#[derive(Clone)]
+pub enum Either<L, R> {
+  /// The first type.
+  Left(L),
+  /// The second type.
+  Right(R),
+}
+
+impl<L, R, T> Iterator for Either<L, R>
+where
+  L: Iterator<Item = T>,
+  R: Iterator<Item = T>,
+{
+  type Item = T;
+
+  fn next(&mut self) -> Option<T> {
+    match self {
+      Self::Left(left) => left.next(),
+      Self::Right(right) => right.next(),
+    }
+  }
+}
+
+
 /// Join items with a character.
 #[cfg(any(test, feature = "test"))]
 pub fn join<I, T>(joiner: char, iter: I) -> Option<String>
