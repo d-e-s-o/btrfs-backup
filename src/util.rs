@@ -4,12 +4,12 @@
 use std::borrow::Cow;
 use std::env::current_dir;
 use std::ffi::OsStr;
+use std::ffi::OsString;
 #[cfg(any(test, feature = "test"))]
 use std::fmt::Display;
 use std::fs::canonicalize;
 use std::io;
 use std::io::ErrorKind;
-use std::ops::Deref as _;
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::Component;
 use std::path::Path;
@@ -64,6 +64,23 @@ where
 }
 
 
+/// Concatenate a command and its arguments into a single string.
+pub fn concat_command<C, A, S>(command: C, args: A) -> OsString
+where
+  C: AsRef<OsStr>,
+  A: IntoIterator<Item = S>,
+  S: AsRef<OsStr>,
+{
+  args
+    .into_iter()
+    .fold(command.as_ref().to_os_string(), |mut cmd, arg| {
+      cmd.push(OsStr::new(" "));
+      cmd.push(arg.as_ref());
+      cmd
+    })
+}
+
+
 /// Format a command with the given list of arguments as a string.
 pub fn format_command<C, A, S>(command: C, args: A) -> String
 where
@@ -71,14 +88,7 @@ where
   A: IntoIterator<Item = S>,
   S: AsRef<OsStr>,
 {
-  args.into_iter().fold(
-    command.as_ref().to_string_lossy().into_owned(),
-    |mut cmd, arg| {
-      cmd += " ";
-      cmd += arg.as_ref().to_string_lossy().deref();
-      cmd
-    },
-  )
+  concat_command(command, args).to_string_lossy().to_string()
 }
 
 
@@ -91,7 +101,6 @@ pub fn bytes_to_path(bytes: &[u8]) -> Cow<'_, Path> {
 /// Convert a byte vector into a [`PathBuf`].
 #[cfg(any(test, feature = "test"))]
 pub fn vec_to_path_buf(vec: Vec<u8>) -> Result<PathBuf> {
-  use std::ffi::OsString;
   use std::os::unix::ffi::OsStringExt as _;
 
   Ok(PathBuf::from(OsString::from_vec(vec)))
