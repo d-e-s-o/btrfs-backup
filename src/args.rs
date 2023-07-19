@@ -14,7 +14,7 @@ use time::Duration;
 
 
 /// Parse a duration from a string.
-pub fn parse_duration(s: &str) -> Result<Duration> {
+fn parse_duration(s: &str) -> Result<Duration> {
   // Yes, months and years may not be day-accurate. But hopefully it
   // will be good enough. *duck*
   let durations = [("d", 1), ("w", 7), ("m", 30), ("y", 365)];
@@ -149,4 +149,24 @@ pub struct Snapshot {
   pub repository: Option<PathBuf>,
   #[command(flatten)]
   pub tag: Tag,
+}
+
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+
+  /// Make sure that we can parse durations properly.
+  #[test]
+  fn duration_parsing() {
+    assert_eq!(parse_duration("1d").unwrap(), Duration::days(1));
+    assert_eq!(parse_duration("23w").unwrap(), Duration::weeks(23));
+    assert_eq!(parse_duration("2m").unwrap(), Duration::days(60));
+    assert_eq!(parse_duration("3y").unwrap(), Duration::days(3 * 365));
+    assert!(parse_duration("xxx")
+      .unwrap_err()
+      .to_string()
+      .contains("invalid duration provided"));
+  }
 }
