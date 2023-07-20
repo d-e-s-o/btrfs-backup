@@ -10,6 +10,7 @@ mod redefine;
 mod args;
 #[doc(hidden)]
 pub mod btrfs;
+mod ops;
 mod repo;
 #[doc(hidden)]
 pub mod snapshot;
