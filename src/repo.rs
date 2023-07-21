@@ -3,10 +3,6 @@
 
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
-use std::fs::canonicalize;
-use std::fs::create_dir_all;
-use std::fs::metadata;
-use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -17,6 +13,8 @@ use anyhow::Result;
 use time::Duration;
 
 use crate::btrfs::Btrfs;
+use crate::ops::FileOps as _;
+use crate::ops::LocalOps;
 use crate::snapshot::current_time;
 use crate::snapshot::Snapshot;
 use crate::snapshot::SnapshotBase;
@@ -145,20 +143,6 @@ pub fn backup(src: &Repo, dst: &Repo, subvol: &Path, tag: &str) -> Result<Snapsh
 }
 
 
-/// Check whether a `path` references a directory.
-///
-/// This function differs from [`std::path::Path::is_dir`] in that it
-/// only maps file-not-found errors into the `Ok` portion of the result.
-/// All other errors (such as permission denied) are reported verbatim.
-fn is_dir(path: &Path) -> Result<bool> {
-  match metadata(path) {
-    Ok(info) => Ok(info.is_dir()),
-    Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
-    Err(err) => Err(err.into()),
-  }
-}
-
-
 /// Restore a subvolume from a source repository.
 pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Result<()> {
   let subvol = canonicalize_non_strict(subvol)?;
@@ -166,7 +150,7 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
     // The subvolume is unlikely to exist (after all, it's meant to be
     // restored). However, given that the user wants to restore it we
     // should make sure that the path to it exists.
-    let () = create_dir_all(parent)?;
+    let () = dst.file_ops.create_dir_all(parent)?;
   }
 
   let snapshots = src.snapshots()?;
@@ -190,7 +174,7 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
   // there is a directory where 'subvolume' points to, the command will
   // just manifest the new subvolume in this directory. So explicitly
   // guard against this case here.
-  if !snapshot_only && is_dir(&subvol)? {
+  if !snapshot_only && dst.file_ops.is_dir(&subvol)? {
     bail!(
       "Cannot restore subvolume {}: a directory with this name exists",
       subvol.display()
@@ -251,6 +235,8 @@ pub fn purge(repo: &Repo, subvol: &Path, tag: &str, keep_for: Duration) -> Resul
 /// A repository used for managing btrfs snapshots.
 #[derive(Clone, Debug)]
 pub struct Repo {
+  /// The set of file operations to use.
+  file_ops: LocalOps,
   /// Our btrfs API.
   btrfs: Btrfs,
   /// The containing btrfs filesystem's root. This path has been
@@ -267,17 +253,21 @@ impl Repo {
   where
     P: AsRef<Path>,
   {
+    let file_ops = LocalOps::default();
     let directory = directory.as_ref();
-    let () = create_dir_all(directory)
+    let () = file_ops
+      .create_dir_all(directory)
       .with_context(|| format!("could not ensure directory {} exists", directory.display()))?;
 
-    let directory = canonicalize(directory)
+    let directory = file_ops
+      .canonicalize(directory)
       .with_context(|| format!("failed to canonicalize path {}", directory.display()))?;
 
     let btrfs = Btrfs::new();
     let root = find_root(&btrfs, &directory)?;
 
     let slf = Self {
+      file_ops,
       btrfs,
       // SANITY: Our detected btrfs root directory should always be a
       //         prefix of `directory`.
@@ -292,7 +282,7 @@ impl Repo {
   /// If an up-to-date snapshot is present already, just return it
   /// directly.
   pub fn snapshot(&self, subvol: &Path, tag: &str) -> Result<Snapshot> {
-    let subvol = canonicalize(subvol)?;
+    let subvol = self.file_ops.canonicalize(subvol)?;
     let snapshots = self.snapshots()?;
     // When searching for the most recent snapshot in this context we
     // are looking for one with not just any but this specific tag.
