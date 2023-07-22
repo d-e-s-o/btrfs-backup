@@ -6,7 +6,6 @@
 
 use std::borrow::Cow;
 use std::ffi::OsStr;
-use std::fs::canonicalize;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr as _;
@@ -20,6 +19,7 @@ use once_cell::sync::Lazy;
 
 use regex::Regex;
 
+use crate::ops::FileOps;
 use crate::util::bytes_to_path;
 use crate::util::check;
 use crate::util::format_command;
@@ -163,13 +163,14 @@ impl Btrfs {
   /// This method will panic if `directory` is not relative to `root`.
   pub fn subvolumes(
     &self,
+    ops: &dyn FileOps,
     root: &Path,
     directory: Option<&Path>,
     readonly: bool,
   ) -> Result<Vec<(PathBuf, usize)>> {
     // In order for our path substitution "magic" below to work we
     // should make sure to work with canonical paths only.
-    let root = canonicalize(root)?;
+    let root = ops.canonicalize(root)?;
     let directory = if let Some(directory) = directory {
       assert!(
         directory.is_relative(),
@@ -177,7 +178,7 @@ impl Btrfs {
         directory.display()
       );
 
-      Cow::Owned(canonicalize(root.join(directory))?)
+      Cow::Owned(ops.canonicalize(&root.join(directory))?)
     } else {
       Cow::Borrowed(&root)
     };
@@ -326,6 +327,7 @@ mod tests {
 
   use serial_test::serial;
 
+  use crate::ops::LocalOps;
   use crate::test::with_btrfs;
   use crate::test::BtrfsDev;
   use crate::test::Mount;
@@ -400,11 +402,13 @@ mod tests {
   #[serial]
   fn subvolumes() {
     with_btrfs(|root| {
+      let ops = LocalOps::default();
       let btrfs = Btrfs::new();
+
       let readonly = true;
-      let subvolumes = btrfs.subvolumes(root, None, readonly).unwrap();
+      let subvolumes = btrfs.subvolumes(&ops, root, None, readonly).unwrap();
       assert!(subvolumes.is_empty());
-      let subvolumes = btrfs.subvolumes(root, None, !readonly).unwrap();
+      let subvolumes = btrfs.subvolumes(&ops, root, None, !readonly).unwrap();
       assert!(subvolumes.is_empty());
 
       let subvol_name = OsStr::new("subvol");
@@ -420,14 +424,17 @@ mod tests {
         .unwrap();
 
       // List the readonly subvolumes. One should be reported.
-      let mut subvolumes = btrfs.subvolumes(root, None, readonly).unwrap().into_iter();
+      let mut subvolumes = btrfs
+        .subvolumes(&ops, root, None, readonly)
+        .unwrap()
+        .into_iter();
       assert_eq!(subvolumes.len(), 1);
 
       let next = subvolumes.next().unwrap();
       assert_eq!(next.0, snapshot_name);
       assert_ne!(next.1, 0);
 
-      let mut subvolumes = btrfs.subvolumes(root, None, !readonly).unwrap();
+      let mut subvolumes = btrfs.subvolumes(&ops, root, None, !readonly).unwrap();
       let () = subvolumes.sort();
 
       let mut subvolumes = subvolumes.into_iter();
@@ -449,6 +456,7 @@ mod tests {
   #[serial]
   fn subvolumes_in_subdir() {
     with_btrfs(|root| {
+      let ops = LocalOps::default();
       let btrfs = Btrfs::new();
 
       let subvol_name = OsStr::new("subvol");
@@ -461,7 +469,7 @@ mod tests {
       // List the subvolumes in "test-dir".
       let readonly = true;
       let mut subvolumes = btrfs
-        .subvolumes(root, Some(Path::new("test-dir")), !readonly)
+        .subvolumes(&ops, root, Some(Path::new("test-dir")), !readonly)
         .unwrap()
         .into_iter();
       assert_eq!(subvolumes.len(), 1);
@@ -479,7 +487,9 @@ mod tests {
   #[serial]
   fn subvol_changes() {
     with_btrfs(|root| {
+      let ops = LocalOps::default();
       let btrfs = Btrfs::new();
+
       let subvol = root.join("root");
       let () = btrfs.create_subvol(&subvol).unwrap();
       let () = write(subvol.join("file"), b"content").unwrap();
@@ -490,7 +500,7 @@ mod tests {
       let () = btrfs.snapshot(&subvol, &snapshot_path, !readonly).unwrap();
 
       let subvolumes = btrfs
-        .subvolumes(root, None, !readonly)
+        .subvolumes(&ops, root, None, !readonly)
         .unwrap()
         .into_iter()
         .collect::<HashMap<_, _>>();

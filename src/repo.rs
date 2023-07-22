@@ -340,7 +340,12 @@ impl Repo {
     let readonly = true;
     let mut snapshots = self
       .btrfs
-      .subvolumes(&self.btrfs_root, Some(&self.repo_root), readonly)?
+      .subvolumes(
+        &self.file_ops,
+        &self.btrfs_root,
+        Some(&self.repo_root),
+        readonly,
+      )?
       .into_iter()
       // We are only interested in snapshots *directly* inside of
       // `repo_root`.
