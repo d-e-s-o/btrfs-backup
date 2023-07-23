@@ -6,6 +6,8 @@
 
 use std::borrow::Cow;
 use std::ffi::OsStr;
+use std::ffi::OsString;
+use std::iter;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr as _;
@@ -26,6 +28,7 @@ use crate::util::format_command;
 use crate::util::output;
 use crate::util::pipeline;
 use crate::util::run;
+use crate::util::Either;
 
 use super::commands;
 
@@ -59,13 +62,43 @@ pub fn trace_commands() {
 
 /// A type for performing various btrfs related operations.
 #[derive(Clone, Debug)]
-pub struct Btrfs(());
+pub struct Btrfs {
+  /// Command & arguments to prefix each btrfs command with.
+  command: Option<(OsString, Vec<OsString>)>,
+}
 
 impl Btrfs {
   /// Create a new `Btrfs` instance.
   #[allow(clippy::new_without_default)]
   pub fn new() -> Self {
-    Self(())
+    Self { command: None }
+  }
+
+  fn command<'slf, A, S>(
+    &'slf self,
+    args: A,
+  ) -> (
+    impl AsRef<OsStr> + 'slf,
+    impl IntoIterator<Item = impl AsRef<OsStr> + 'slf> + 'slf,
+  )
+  where
+    A: IntoIterator<Item = S> + 'slf,
+    S: AsRef<OsStr> + 'slf,
+  {
+    let prefix_command = self.command.as_ref().map(|(command, _args)| command);
+    let prefix_args = self.command.as_ref().map(|(_command, args)| args);
+
+    let mut iter = prefix_command
+      .into_iter()
+      .map(AsRef::<OsStr>::as_ref)
+      .chain(prefix_args.into_iter().flatten().map(OsString::as_ref))
+      .map(Either::Left)
+      .chain(iter::once(Either::Right(Either::Left(BTRFS))))
+      .chain(args.into_iter().map(Either::Right).map(Either::Right));
+
+    // SANITY: There will always be at least `BTRFS` in `iter`.
+    let command = iter.next().unwrap();
+    (command, iter)
   }
 
   /// Print a btrfs command to stdout, if enabled.
@@ -75,7 +108,8 @@ impl Btrfs {
     S: AsRef<OsStr>,
   {
     if TRACE_COMMANDS.load(Ordering::Relaxed) {
-      println!("{}", format_command(BTRFS, args))
+      let (command, args) = self.command(args);
+      println!("{}", format_command(command, args))
     }
   }
 

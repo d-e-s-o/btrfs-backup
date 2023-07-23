@@ -47,6 +47,20 @@ where
   }
 }
 
+impl<L, R, T> AsRef<T> for Either<L, R>
+where
+  L: AsRef<T>,
+  R: AsRef<T>,
+  T: ?Sized,
+{
+  fn as_ref(&self) -> &T {
+    match self {
+      Self::Left(left) => left.as_ref(),
+      Self::Right(right) => right.as_ref(),
+    }
+  }
+}
+
 
 /// Join items with a character.
 #[cfg(any(test, feature = "test"))]
