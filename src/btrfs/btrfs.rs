@@ -78,12 +78,12 @@ impl Btrfs {
     &'slf self,
     args: A,
   ) -> (
-    impl AsRef<OsStr> + 'slf,
-    impl IntoIterator<Item = impl AsRef<OsStr> + 'slf> + 'slf,
+    impl AsRef<OsStr> + Clone + 'slf,
+    impl IntoIterator<Item = impl AsRef<OsStr> + Clone + 'slf> + 'slf,
   )
   where
     A: IntoIterator<Item = S> + 'slf,
-    S: AsRef<OsStr> + 'slf,
+    S: AsRef<OsStr> + Clone + 'slf,
   {
     let prefix_command = self.command.as_ref().map(|(command, _args)| command);
     let prefix_args = self.command.as_ref().map(|(_command, args)| args);
@@ -105,7 +105,7 @@ impl Btrfs {
   fn maybe_print<A, S>(&self, args: A)
   where
     A: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
+    S: AsRef<OsStr> + Clone,
   {
     if TRACE_COMMANDS.load(Ordering::Relaxed) {
       let (command, args) = self.command(args);

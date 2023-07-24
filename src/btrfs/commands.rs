@@ -13,12 +13,16 @@ use crate::util::Either;
 
 
 /// Retrieve the command to create a new btrfs subvolume.
-pub fn create(subvol: &Path) -> impl IntoIterator<Item = &OsStr> + Clone {
+pub fn create(
+  subvol: &Path,
+) -> impl IntoIterator<Item = &OsStr, IntoIter = impl Iterator<Item = &OsStr> + Clone> + Copy {
   ["subvolume".as_ref(), "create".as_ref(), subvol.as_os_str()]
 }
 
 /// Retrieve the command to delete a btrfs subvolume.
-pub fn delete(subvol: &Path) -> impl IntoIterator<Item = &OsStr> + Clone {
+pub fn delete(
+  subvol: &Path,
+) -> impl IntoIterator<Item = &OsStr, IntoIter = impl Iterator<Item = &OsStr> + Clone> + Copy {
   ["subvolume".as_ref(), "delete".as_ref(), subvol.as_os_str()]
 }
 
@@ -27,7 +31,8 @@ pub fn snapshot<'input>(
   source: &'input Path,
   destination: &'input Path,
   readonly: bool,
-) -> impl IntoIterator<Item = &'input OsStr> + Clone {
+) -> impl IntoIterator<Item = &'input OsStr, IntoIter = impl Iterator<Item = &'input OsStr> + Clone>
+     + Clone {
   let command = [
     "subvolume".as_ref(),
     "snapshot".as_ref(),
@@ -47,7 +52,9 @@ pub fn snapshot<'input>(
 /// # Notes
 /// A sync operation should be performed before attempting to send
 /// (i.e., serialize) a btrfs snapshot.
-pub fn sync(filesystem: &Path) -> impl IntoIterator<Item = &OsStr> + Clone {
+pub fn sync(
+  filesystem: &Path,
+) -> impl IntoIterator<Item = &OsStr, IntoIter = impl Iterator<Item = &OsStr> + Clone> + Copy {
   [
     "filesystem".as_ref(),
     "sync".as_ref(),
@@ -59,7 +66,7 @@ pub fn sync(filesystem: &Path) -> impl IntoIterator<Item = &OsStr> + Clone {
 pub fn serialize<'input, I>(
   subvol: &'input Path,
   parents: I,
-) -> impl IntoIterator<Item = &'input OsStr> + Clone
+) -> impl IntoIterator<Item = &OsStr, IntoIter = impl Iterator<Item = &OsStr> + Clone> + Clone
 where
   // TODO: Ideally we'd accept any P: AsRef<OsStr> as item, but that
   //       fails with today's borrow checker.
@@ -92,7 +99,9 @@ where
 
 /// Retrieve the command to deserialize a btrfs subvolume from a byte
 /// stream.
-pub fn deserialize(destination: &Path) -> impl IntoIterator<Item = &OsStr> + Clone {
+pub fn deserialize(
+  destination: &Path,
+) -> impl IntoIterator<Item = &OsStr, IntoIter = impl Iterator<Item = &OsStr> + Clone> + Copy {
   ["receive".as_ref(), destination.as_os_str()]
 }
 
@@ -104,7 +113,10 @@ pub fn deserialize(destination: &Path) -> impl IntoIterator<Item = &OsStr> + Clo
 /// Please be aware of the wrong handling of the `-o` parameter by
 /// `btrfs`, leading to *not* necessarily only subvolumes below the
 /// given directory being returned.
-pub fn subvolumes(directory: &Path, readonly: bool) -> impl IntoIterator<Item = &OsStr> + Clone {
+pub fn subvolumes(
+  directory: &Path,
+  readonly: bool,
+) -> impl IntoIterator<Item = &OsStr, IntoIter = impl Iterator<Item = &OsStr> + Clone> + Clone {
   // Note: We do not pass in the -s option here. The reason is that once
   //       we send and received a snapshot, the property of it being a
   //       snapshot is lost. The only property that is preserved is it
@@ -132,7 +144,11 @@ pub fn subvolumes(directory: &Path, readonly: bool) -> impl IntoIterator<Item = 
 /// This function creates a command that, given a btrfs subvolume and
 /// a previous generation ID, determines the files that have been
 /// changed.
-pub fn diff(subvol: &Path, generation: usize) -> impl IntoIterator<Item = Cow<'_, OsStr>> + Clone {
+pub fn diff(
+  subvol: &Path,
+  generation: usize,
+) -> impl IntoIterator<Item = Cow<'_, OsStr>, IntoIter = impl Iterator<Item = Cow<'_, OsStr>> + Clone>
+     + Clone {
   let generation = generation.to_string();
   [
     "subvolume".as_ref(),
@@ -146,7 +162,9 @@ pub fn diff(subvol: &Path, generation: usize) -> impl IntoIterator<Item = Cow<'_
 
 /// Retrieve the command to show information about a btrfs file
 /// system.
-pub fn show_filesystem(filesystem: &Path) -> impl IntoIterator<Item = &OsStr> + Clone {
+pub fn show_filesystem(
+  filesystem: &Path,
+) -> impl IntoIterator<Item = &OsStr, IntoIter = impl Iterator<Item = &OsStr> + Clone> + Copy {
   [
     "filesystem".as_ref(),
     "show".as_ref(),
@@ -155,7 +173,9 @@ pub fn show_filesystem(filesystem: &Path) -> impl IntoIterator<Item = &OsStr> + 
 }
 
 /// Retrieve the command to retrieve the subvolume ID of a given path.
-pub fn root_id(path: &Path) -> impl IntoIterator<Item = &OsStr> + Clone {
+pub fn root_id(
+  path: &Path,
+) -> impl IntoIterator<Item = &OsStr, IntoIter = impl Iterator<Item = &OsStr> + Clone> + Copy {
   [
     "inspect-internal".as_ref(),
     "rootid".as_ref(),
@@ -164,7 +184,11 @@ pub fn root_id(path: &Path) -> impl IntoIterator<Item = &OsStr> + Clone {
 }
 
 /// Retrieve the command to resolve the path for a subvolume ID.
-pub fn resolve_id(id: usize, path: &Path) -> impl IntoIterator<Item = Cow<'_, OsStr>> + Clone {
+pub fn resolve_id(
+  id: usize,
+  path: &Path,
+) -> impl IntoIterator<Item = Cow<'_, OsStr>, IntoIter = impl Iterator<Item = Cow<'_, OsStr>> + Clone>
+     + Clone {
   let id = id.to_string();
 
   ["inspect-internal".as_ref(), "subvolid-resolve".as_ref()]
@@ -176,7 +200,10 @@ pub fn resolve_id(id: usize, path: &Path) -> impl IntoIterator<Item = Cow<'_, Os
 
 
 /// Retrieve the command to make a subvolume read-only.
-pub fn set_readonly(path: &Path) -> impl IntoIterator<Item = Cow<'_, OsStr>> + Clone {
+pub fn set_readonly(
+  path: &Path,
+) -> impl IntoIterator<Item = Cow<'_, OsStr>, IntoIter = impl Iterator<Item = Cow<'_, OsStr>> + Clone>
+     + Clone {
   ["property".as_ref(), "set".as_ref()]
     .into_iter()
     .map(Cow::Borrowed)
