@@ -79,10 +79,11 @@ impl Btrfs {
     args: A,
   ) -> (
     impl AsRef<OsStr> + Clone + 'slf,
-    impl IntoIterator<Item = impl AsRef<OsStr> + Clone + 'slf> + 'slf,
+    impl IntoIterator<Item = impl AsRef<OsStr> + Clone + 'slf> + Clone + 'slf,
   )
   where
     A: IntoIterator<Item = S> + 'slf,
+    A::IntoIter: Clone,
     S: AsRef<OsStr> + Clone + 'slf,
   {
     let prefix_command = self.command.as_ref().map(|(command, _args)| command);
@@ -104,7 +105,8 @@ impl Btrfs {
   /// Print a btrfs command to stdout, if enabled.
   fn maybe_print<A, S>(&self, args: A)
   where
-    A: IntoIterator<Item = S>,
+    A: IntoIterator<Item = S> + Clone,
+    A::IntoIter: Clone,
     S: AsRef<OsStr> + Clone,
   {
     if TRACE_COMMANDS.load(Ordering::Relaxed) {
@@ -116,48 +118,54 @@ impl Btrfs {
   /// Check whether `filesystem` points to a valid btrfs filesystem.
   pub fn is_btrfs(&self, filesystem: &Path) -> Result<bool> {
     let args = commands::show_filesystem(filesystem);
-    let () = self.maybe_print(args.clone());
-    check(BTRFS, args)
+    let () = self.maybe_print(args);
+    let (command, args) = self.command(args);
+    check(command, args)
   }
 
   /// Create a subvolume.
   pub fn create_subvol(&self, subvolume: &Path) -> Result<()> {
     let args = commands::create(subvolume);
-    let () = self.maybe_print(args.clone());
-    run(BTRFS, args)
+    let () = self.maybe_print(args);
+    let (command, args) = self.command(args);
+    run(command, args)
   }
 
   /// Delete a subvolume.
   pub fn delete_subvol(&self, subvolume: &Path) -> Result<()> {
     let args = commands::delete(subvolume);
-    let () = self.maybe_print(args.clone());
-    run(BTRFS, args)
+    let () = self.maybe_print(args);
+    let (command, args) = self.command(args);
+    run(command, args)
   }
 
   /// Snapshot a subvolume `source` to `destination`.
   pub fn snapshot(&self, source: &Path, destination: &Path, readonly: bool) -> Result<()> {
     let args = commands::snapshot(source, destination, readonly);
     let () = self.maybe_print(args.clone());
-    run(BTRFS, args)
+    let (command, args) = self.command(args);
+    run(command, args)
   }
 
   /// Synchronize the provided btrfs file system to disk.
   pub fn sync(&self, filesystem: &Path) -> Result<()> {
     let args = commands::sync(filesystem);
-    let () = self.maybe_print(args.clone());
-    run(BTRFS, args)
+    let () = self.maybe_print(args);
+    let (command, args) = self.command(args);
+    run(command, args)
   }
 
   /// List all subvolumes in `directory`.
   fn subvolumes_impl(&self, directory: &Path, readonly: bool) -> Result<Vec<(PathBuf, usize)>> {
     let args = commands::subvolumes(directory, readonly);
     let () = self.maybe_print(args.clone());
+    let (command, args) = self.command(args);
 
-    let output = output(BTRFS, args.clone())?;
+    let output = output(command.clone(), args.clone())?;
     let output = String::from_utf8(output).with_context(|| {
       format!(
         "failed to read `{}` output as UTF-8 string",
-        format_command(BTRFS, args.clone())
+        format_command(command, args.clone())
       )
     })?;
 
@@ -271,8 +279,9 @@ impl Btrfs {
     // changed *in* the snapshot are included in the diff as well.
     let args = commands::diff(subvolume, generation + 1);
     let () = self.maybe_print(args.clone());
+    let (command, args) = self.command(args);
 
-    let output = output(BTRFS, args)?;
+    let output = output(command, args)?;
     let result = !output.starts_with(DIFF_END_MARKER);
     Ok(result)
   }
@@ -280,20 +289,21 @@ impl Btrfs {
   /// Query the ID of a subvolume at the provided `path`.
   pub fn subvol_id(&self, path: &Path) -> Result<usize> {
     let args = commands::root_id(path);
-    let () = self.maybe_print(args.clone());
+    let () = self.maybe_print(args);
+    let (command, args) = self.command(args);
 
-    let output = output(BTRFS, args.clone())?;
+    let output = output(command.clone(), args.clone())?;
     let output = String::from_utf8(output).with_context(|| {
       format!(
         "failed to read `{}` output as UTF-8 string",
-        format_command(BTRFS, args.clone())
+        format_command(command.clone(), args.clone())
       )
     })?;
 
     let id = usize::from_str(&output[..output.len().saturating_sub(1)]).with_context(|| {
       format!(
         "failed to convert `{}` output to ID",
-        format_command(BTRFS, args)
+        format_command(command, args)
       )
     })?;
 
@@ -309,8 +319,9 @@ impl Btrfs {
   pub fn resolve_id(&self, id: usize, root: &Path) -> Result<PathBuf> {
     let args = commands::resolve_id(id, root);
     let () = self.maybe_print(args.clone());
+    let (command, args) = self.command(args);
 
-    let output = output(BTRFS, args)?;
+    let output = output(command, args)?;
     let path = bytes_to_path(&output[..output.len().saturating_sub(1)]);
     Ok(path.to_path_buf())
   }
@@ -319,7 +330,8 @@ impl Btrfs {
   pub fn make_subvol_readonly(&self, subvol: &Path) -> Result<()> {
     let args = commands::set_readonly(subvol);
     let () = self.maybe_print(args.clone());
-    run(BTRFS, args)
+    let (command, args) = self.command(args);
+    run(command, args)
   }
 
   /// Send `send_subvolume` to `recv_destination`.
@@ -342,7 +354,7 @@ impl Btrfs {
       println!(
         "{} | {}",
         format_command(BTRFS, args1.clone()),
-        format_command(BTRFS, args2.clone())
+        format_command(BTRFS, args2)
       )
     }
 
