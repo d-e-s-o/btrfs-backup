@@ -127,9 +127,12 @@ fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot) -> Result<()> {
   let parents = parents.iter().map(OsStr::new);
 
   let () = src.btrfs.sync(&src.btrfs_root)?;
-  let () = src
-    .btrfs
-    .send_recv(&src.path().join(src_snap.to_string()), parents, &dst.path())?;
+  let () = src.btrfs.send_recv(
+    &src.path().join(src_snap.to_string()),
+    parents,
+    &dst.btrfs,
+    &dst.path(),
+  )?;
 
   Ok(())
 }

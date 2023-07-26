@@ -339,6 +339,7 @@ impl Btrfs {
     &self,
     send_subvolume: &'input Path,
     send_parents: I,
+    recv: &Btrfs,
     recv_destination: &Path,
   ) -> Result<()>
   where
@@ -347,18 +348,20 @@ impl Btrfs {
     I: IntoIterator<Item = &'input OsStr>,
     I::IntoIter: Clone,
   {
-    let args1 = commands::serialize(send_subvolume, send_parents);
-    let args2 = commands::deserialize(recv_destination);
+    let src_args = commands::serialize(send_subvolume, send_parents);
+    let (src_cmd, src_args) = self.command(src_args);
+    let dst_args = commands::deserialize(recv_destination);
+    let (dst_cmd, dst_args) = recv.command(dst_args);
 
     if TRACE_COMMANDS.load(Ordering::Relaxed) {
       println!(
         "{} | {}",
-        format_command(BTRFS, args1.clone()),
-        format_command(BTRFS, args2)
+        format_command(src_cmd.clone(), src_args.clone()),
+        format_command(dst_cmd.clone(), dst_args.clone())
       )
     }
 
-    pipeline(BTRFS, args1, BTRFS, args2)
+    pipeline(src_cmd, src_args, dst_cmd, dst_args)
   }
 }
 
@@ -582,7 +585,9 @@ mod tests {
     let readonly = true;
     let () = btrfs.snapshot(&subvol, &snapshot, readonly).unwrap();
 
-    let () = btrfs.send_recv(&snapshot, [], mount2.path()).unwrap();
+    let () = btrfs
+      .send_recv(&snapshot, [], &btrfs, mount2.path())
+      .unwrap();
     assert!(mount2.path().join("snapshot").exists());
   }
 
