@@ -61,7 +61,7 @@ pub fn trace_commands() {
 
 
 /// A type for performing various btrfs related operations.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Btrfs {
   /// Command & arguments to prefix each btrfs command with.
   command: Option<(OsString, Vec<OsString>)>,
@@ -69,7 +69,6 @@ pub struct Btrfs {
 
 impl Btrfs {
   /// Create a new `Btrfs` instance.
-  #[allow(clippy::new_without_default)]
   pub fn new() -> Self {
     Self { command: None }
   }

@@ -235,6 +235,45 @@ pub fn purge(repo: &Repo, subvol: &Path, tag: &str, keep_for: Duration) -> Resul
 }
 
 
+/// A builder for `Repo` objects.
+#[derive(Clone, Debug, Default)]
+pub struct RepoBuilder {
+  /// The `Btrfs` instance to use.
+  btrfs: Option<Btrfs>,
+}
+
+impl RepoBuilder {
+  /// Build the `Repo` object.
+  pub fn build<P>(self, directory: P) -> Result<Repo>
+  where
+    P: AsRef<Path>,
+  {
+    let file_ops = LocalOps::default();
+    let directory = directory.as_ref();
+    let () = file_ops
+      .create_dir_all(directory)
+      .with_context(|| format!("could not ensure directory {} exists", directory.display()))?;
+
+    let directory = file_ops
+      .canonicalize(directory)
+      .with_context(|| format!("failed to canonicalize path {}", directory.display()))?;
+
+    let btrfs = self.btrfs.unwrap_or_default();
+    let root = find_root(&btrfs, &directory)?;
+
+    let repo = Repo {
+      file_ops,
+      btrfs,
+      // SANITY: Our detected btrfs root directory should always be a
+      //         prefix of `directory`.
+      repo_root: directory.strip_prefix(&root).unwrap().to_path_buf(),
+      btrfs_root: root,
+    };
+    Ok(repo)
+  }
+}
+
+
 /// A repository used for managing btrfs snapshots.
 #[derive(Clone, Debug)]
 pub struct Repo {
@@ -251,33 +290,17 @@ pub struct Repo {
 }
 
 impl Repo {
+  /// Create a `RepoBuilder` object.
+  pub fn builder() -> RepoBuilder {
+    RepoBuilder::default()
+  }
+
   /// Create a new `Repo` object, with `directory` as the root.
   pub fn new<P>(directory: P) -> Result<Self>
   where
     P: AsRef<Path>,
   {
-    let file_ops = LocalOps::default();
-    let directory = directory.as_ref();
-    let () = file_ops
-      .create_dir_all(directory)
-      .with_context(|| format!("could not ensure directory {} exists", directory.display()))?;
-
-    let directory = file_ops
-      .canonicalize(directory)
-      .with_context(|| format!("failed to canonicalize path {}", directory.display()))?;
-
-    let btrfs = Btrfs::new();
-    let root = find_root(&btrfs, &directory)?;
-
-    let slf = Self {
-      file_ops,
-      btrfs,
-      // SANITY: Our detected btrfs root directory should always be a
-      //         prefix of `directory`.
-      repo_root: directory.strip_prefix(&root).unwrap().to_path_buf(),
-      btrfs_root: root,
-    };
-    Ok(slf)
+    Self::builder().build(directory)
   }
 
   /// Create a snapshot of the given subvolume in this repository.
