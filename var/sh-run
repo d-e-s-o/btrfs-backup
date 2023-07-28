@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+
+# A tiny wrapper around /bin/sh that allows argument passing without -c,
+# to get similar behavior as with ssh.
+
+exec "$@"
