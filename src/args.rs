@@ -31,6 +31,22 @@ fn parse_duration(s: &str) -> Result<Duration> {
 }
 
 
+/// Parse a command from a string.
+fn parse_command(s: &str) -> Result<(String, Vec<String>)> {
+  // TODO: We currently don't support escaped inputs here but we really
+  //       should, because right now a command itself cannot contain
+  //       a space in its name (it would be parsed as a command with
+  //       arguments).
+  let mut iter = s.split(' ');
+  let command = iter
+    .next()
+    .ok_or_else(|| anyhow!("provided command is empty"))?
+    .to_string();
+  let args = iter.map(str::to_string).collect();
+  Ok((command, args))
+}
+
+
 /// The `--tag` argument.
 #[derive(Debug, Arguments)]
 pub struct Tag {
@@ -41,13 +57,31 @@ pub struct Tag {
 }
 
 
+/// The `--remote-command` argument.
+#[derive(Debug, Arguments)]
+pub struct RemoteCommand {
+  /// The remote command to use (and its arguments). This command will
+  /// be used as a prefix for btrfs (and other) commands to execute,
+  /// enabling for example backup to a remote system over ssh. As such,
+  /// this command needs to accept a list of arguments directly, similar
+  /// to `ssh` (and as opposed to assuming a quoted & escaped
+  /// concatenation of said arguments as `sh -c` does).
+  /// Note that this command may contain arguments separated by spaces.
+  /// It is not currently possible to reference an executable that
+  /// contains a space in its name.
+  #[clap(long)]
+  #[arg(value_parser = parse_command)]
+  pub remote_command: Option<(String, Vec<String>)>,
+}
+
+
 /// A program for backup & restoration of btrfs subvolumes.
 #[derive(Debug, Parser)]
 #[clap(version = env!("VERSION"))]
 pub struct Args {
   #[command(subcommand)]
   pub command: Command,
-  /// Print a trace of all commands executed.
+  /// Print a trace of all btrfs commands executed.
   #[clap(long = "trace", global = true)]
   pub trace: bool,
 }
@@ -82,6 +116,8 @@ pub struct Backup {
   pub destination: PathBuf,
   #[command(flatten)]
   pub tag: Tag,
+  #[command(flatten)]
+  pub remote_command: RemoteCommand,
 }
 
 /// An type representing the `restore` command.
@@ -98,6 +134,8 @@ pub struct Restore {
   /// subvolume being restored.
   #[clap(short, long)]
   pub destination: Option<PathBuf>,
+  #[command(flatten)]
+  pub remote_command: RemoteCommand,
   /// Whether or not to only restore snapshots, not actual subvolumes
   /// they represent.
   #[clap(long)]
@@ -124,6 +162,8 @@ pub struct Purge {
   pub destination: Option<PathBuf>,
   #[command(flatten)]
   pub tag: Tag,
+  #[command(flatten)]
+  pub remote_command: RemoteCommand,
   /// The duration for which to keep snapshots. E.g., 3w (three weeks)
   /// or 1m (one month). Supported suffixes are 'd' (day), 'w' (week),
   /// 'm' (month), and 'y' (year). Snapshots older than that will get
@@ -131,8 +171,8 @@ pub struct Purge {
   ///
   /// Please note that as a precaution, the most recent snapshot of a
   /// subvolume is never deleted.
-  #[arg(value_parser = parse_duration)]
   #[clap(long)]
+  #[arg(value_parser = parse_duration)]
   pub keep_for: Duration,
 }
 
@@ -168,5 +208,19 @@ mod tests {
       .unwrap_err()
       .to_string()
       .contains("invalid duration provided"));
+  }
+
+
+  /// Make sure that we can parse durations properly.
+  #[test]
+  fn command_parsing() {
+    assert_eq!(
+      parse_command("ssh").unwrap(),
+      ("ssh".to_string(), Vec::new())
+    );
+    assert_eq!(
+      parse_command("ssh server").unwrap(),
+      ("ssh".to_string(), vec!["server".to_string()])
+    );
   }
 }

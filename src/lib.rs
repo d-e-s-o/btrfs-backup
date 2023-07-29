@@ -34,6 +34,7 @@ use crate::args::Args;
 use crate::args::Backup;
 use crate::args::Command;
 use crate::args::Purge;
+use crate::args::RemoteCommand;
 use crate::args::Restore;
 use crate::args::Snapshot;
 use crate::args::Tag;
@@ -100,6 +101,7 @@ fn backup(backup: Backup) -> Result<()> {
     destination,
     source,
     tag: Tag { tag },
+    remote_command: RemoteCommand { remote_command },
   } = backup;
 
   let dst = create_repo(&destination)?;
@@ -118,6 +120,7 @@ fn restore(restore: Restore) -> Result<()> {
     subvolumes,
     destination,
     source,
+    remote_command: RemoteCommand { remote_command },
     snapshots_only,
   } = restore;
 
@@ -142,6 +145,7 @@ fn purge(purge: Purge) -> Result<()> {
     source,
     destination,
     tag: Tag { tag },
+    remote_command: RemoteCommand { remote_command },
     keep_for,
   } = purge;
 
