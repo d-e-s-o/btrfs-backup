@@ -39,6 +39,8 @@ use crate::args::Restore;
 use crate::args::Snapshot;
 use crate::args::Tag;
 use crate::btrfs::trace_commands;
+use crate::btrfs::Btrfs;
+use crate::ops::RemoteOps;
 use crate::repo::backup as backup_subvol;
 use crate::repo::purge as purge_subvol;
 use crate::repo::restore as restore_subvol;
@@ -47,8 +49,18 @@ use crate::repo::Repo;
 
 /// A helper function for creating a btrfs repository in the provided
 /// directory, taking care of all error annotations.
-fn create_repo(directory: &Path) -> Result<Repo> {
-  let repo = Repo::new(directory).with_context(|| {
+fn create_repo(directory: &Path, remote_command: Option<(String, Vec<String>)>) -> Result<Repo> {
+  let mut builder = Repo::builder();
+
+  if let Some((command, args)) = remote_command {
+    let ops = RemoteOps::new(command.clone(), args.clone());
+    let () = builder.set_file_ops(ops);
+
+    let btrfs = Btrfs::with_command_prefix(command, args);
+    let () = builder.set_btrfs_ops(btrfs);
+  }
+
+  let repo = builder.build(directory).with_context(|| {
     format!(
       "failed to create btrfs snapshot repository at {}",
       directory.display()
@@ -69,7 +81,7 @@ where
   let mut f = f;
 
   let repo = if let Some(repo_path) = repo_path {
-    Some(create_repo(repo_path)?)
+    Some(create_repo(repo_path, None)?)
   } else {
     None
   };
@@ -84,7 +96,7 @@ where
           subvol.display()
         )
       })?;
-      Cow::Owned(create_repo(directory)?)
+      Cow::Owned(create_repo(directory, None)?)
     };
 
     f(&repo, subvol)
@@ -104,7 +116,7 @@ fn backup(backup: Backup) -> Result<()> {
     remote_command: RemoteCommand { remote_command },
   } = backup;
 
-  let dst = create_repo(&destination)?;
+  let dst = create_repo(&destination, remote_command)?;
 
   with_repo_and_subvols(source.as_deref(), subvolumes.as_slice(), |src, subvol| {
     let _snapshot = backup_subvol(src, &dst, subvol, &tag)
@@ -124,7 +136,7 @@ fn restore(restore: Restore) -> Result<()> {
     snapshots_only,
   } = restore;
 
-  let src = create_repo(&source)?;
+  let src = create_repo(&source, remote_command)?;
 
   with_repo_and_subvols(
     destination.as_deref(),
@@ -150,7 +162,7 @@ fn purge(purge: Purge) -> Result<()> {
   } = purge;
 
   if let Some(destination) = destination {
-    let repo = create_repo(&destination)?;
+    let repo = create_repo(&destination, remote_command)?;
 
     let () = subvolumes
       .iter()

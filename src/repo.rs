@@ -3,8 +3,10 @@
 
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
+use std::ops::Deref as _;
 use std::path::Path;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use anyhow::bail;
 use anyhow::Context as _;
@@ -13,7 +15,7 @@ use anyhow::Result;
 use time::Duration;
 
 use crate::btrfs::Btrfs;
-use crate::ops::FileOps as _;
+use crate::ops::FileOps;
 use crate::ops::LocalOps;
 use crate::snapshot::current_time;
 use crate::snapshot::Snapshot;
@@ -238,17 +240,34 @@ pub fn purge(repo: &Repo, subvol: &Path, tag: &str, keep_for: Duration) -> Resul
 /// A builder for `Repo` objects.
 #[derive(Clone, Debug, Default)]
 pub struct RepoBuilder {
+  /// The set of file operations to use.
+  file_ops: Option<Rc<dyn FileOps>>,
   /// The `Btrfs` instance to use.
   btrfs: Option<Btrfs>,
 }
 
 impl RepoBuilder {
+  /// Set the `FileOps` instance to use.
+  pub fn set_file_ops<O>(&mut self, file_ops: O)
+  where
+    O: FileOps + 'static,
+  {
+    self.file_ops = Some(Rc::new(file_ops))
+  }
+
+  /// Set the `Btrfs` instance to use.
+  pub fn set_btrfs_ops(&mut self, btrfs: Btrfs) {
+    self.btrfs = Some(btrfs)
+  }
+
   /// Build the `Repo` object.
   pub fn build<P>(self, directory: P) -> Result<Repo>
   where
     P: AsRef<Path>,
   {
-    let file_ops = LocalOps::default();
+    let file_ops = self
+      .file_ops
+      .unwrap_or_else(|| Rc::new(LocalOps::default()));
     let directory = directory.as_ref();
     let () = file_ops
       .create_dir_all(directory)
@@ -278,7 +297,7 @@ impl RepoBuilder {
 #[derive(Clone, Debug)]
 pub struct Repo {
   /// The set of file operations to use.
-  file_ops: LocalOps,
+  file_ops: Rc<dyn FileOps>,
   /// Our btrfs API.
   btrfs: Btrfs,
   /// The containing btrfs filesystem's root. This path has been
@@ -296,6 +315,7 @@ impl Repo {
   }
 
   /// Create a new `Repo` object, with `directory` as the root.
+  #[cfg(test)]
   pub fn new<P>(directory: P) -> Result<Self>
   where
     P: AsRef<Path>,
@@ -367,7 +387,7 @@ impl Repo {
     let mut snapshots = self
       .btrfs
       .subvolumes(
-        &self.file_ops,
+        self.file_ops.deref(),
         &self.btrfs_root,
         Some(&self.repo_root),
         readonly,

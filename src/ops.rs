@@ -84,7 +84,6 @@ impl RemoteOps {
   /// Create a new `RemoteOps` instance, using the provided command
   /// (along with the arguments) for prefixing any shell commands
   /// issued.
-  #[cfg(test)]
   pub fn new<C, A, S>(command: C, args: A) -> Self
   where
     C: AsRef<OsStr>,

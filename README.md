@@ -71,13 +71,15 @@ Status
 ------
 
 The program supports backup and restoration of subvolumes on a single
-system, as well as cleaning up of stale snapshots. As such, it is fully
+system as well as to/from a remote one (e.g., over an `ssh` connection).
+It also can automatically clean stale snapshots. As such, it is fully
 usable for backup needs.
 
 Compared to the [original][btrfs-backup-py] Python version of the
 program, the snapshot naming scheme has changed and a few bugs have been
-fixed. Support for remote backups (over `ssh`) as well as backups to
-files is not yet present.
+fixed. Support for backups to files is not yet present (and may not ever
+be added, as it was considered a fringe feature that was not used
+regularly).
 
 [btrfs-backup-py]: https://github.com/d-e-s-o/btrfs-backup-python/tree/main/btrfs-backup
 [btrfs-progs]: https://github.com/kdave/btrfs-progs

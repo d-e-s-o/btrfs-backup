@@ -73,6 +73,25 @@ impl Btrfs {
     Self { command: None }
   }
 
+  /// Create a `Btrfs` instance that prefixes all `btrfs` commands with
+  /// he given one (and its arguments).
+  pub fn with_command_prefix<C, A, S>(command: C, args: A) -> Self
+  where
+    C: AsRef<OsStr>,
+    A: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+  {
+    let command = command.as_ref().to_os_string();
+    let args = args
+      .into_iter()
+      .map(|arg| arg.as_ref().to_os_string())
+      .collect();
+
+    Self {
+      command: Some((command, args)),
+    }
+  }
+
   fn command<'slf, A, S>(
     &'slf self,
     args: A,
