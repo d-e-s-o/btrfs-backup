@@ -142,30 +142,51 @@ impl BtrfsDev {
 }
 
 
-/// An object representing a mounted file system.
-pub struct Mount {
-  /// The directory in which the file system was mounted.
-  directory: TempDir,
+#[derive(Debug, Default)]
+pub struct MountBuilder {
+  /// The mount directory.
+  directory: Option<PathBuf>,
+  /// The mount(8) options, provided via `-o`, if any.
+  options: Option<String>,
 }
 
-impl Mount {
-  /// Mount the provided device in a temporary directory.
-  pub fn new(device: &Path) -> Result<Self> {
-    let no_options = [""; 0];
-    Self::with_options(device, no_options)
+impl MountBuilder {
+  /// Set the provided directory as the target mount directory.
+  pub fn directory<D>(mut self, directory: D) -> Self
+  where
+    D: AsRef<Path>,
+  {
+    self.directory = Some(directory.as_ref().to_path_buf());
+    self
   }
 
-  /// Mount the provided device in a temporary directory, providing the
-  /// given set of options to the `mount(8)` command.
-  pub fn with_options<O, S>(device: &Path, options: O) -> Result<Self>
+  /// Provide the given set of options to the `mount(8)` command.
+  ///
+  /// These options are formatted in accordance with what the `-o`
+  /// option expects.
+  pub fn options<O, S>(mut self, options: O) -> Self
   where
     O: IntoIterator<Item = S>,
     S: AsRef<str> + Display,
   {
-    let directory = TempDir::new()?;
-    let options = join(',', options.into_iter());
+    self.options = join(',', options.into_iter());
+    self
+  }
 
-    let () = if let Some(options) = options {
+  /// Perform the mount.
+  pub fn mount<P>(self, device: P) -> Result<Mount>
+  where
+    P: AsRef<Path>,
+  {
+    let device = device.as_ref();
+
+    let directory = if let Some(directory) = self.directory {
+      Directory::Existing(directory)
+    } else {
+      Directory::Temporary(TempDir::new()?)
+    };
+
+    let () = if let Some(options) = self.options {
       run(
         MOUNT,
         [
@@ -179,7 +200,44 @@ impl Mount {
       run(MOUNT, [device.as_os_str(), directory.path().as_os_str()])
     }?;
 
-    Ok(Self { directory })
+    let mount = Mount { directory };
+    Ok(mount)
+  }
+}
+
+
+enum Directory {
+  /// An existing directory.
+  Existing(PathBuf),
+  /// A temporary directory.
+  Temporary(TempDir),
+}
+
+impl Directory {
+  fn path(&self) -> &Path {
+    match self {
+      Self::Existing(path) => path,
+      Self::Temporary(temp) => temp.path(),
+    }
+  }
+}
+
+
+/// An object representing a mounted file system.
+pub struct Mount {
+  /// The directory in which the file system was mounted.
+  directory: Directory,
+}
+
+impl Mount {
+  /// Mount the provided device in a temporary directory.
+  pub fn new(device: &Path) -> Result<Self> {
+    Self::builder().mount(device)
+  }
+
+  /// Create a [builder][MountBuilder] object for configuring the mount.
+  pub fn builder() -> MountBuilder {
+    MountBuilder::default()
   }
 
   /// Retrieve the path of the mount.

@@ -678,7 +678,10 @@ mod tests {
       let () = write(subvol.join("file"), "test42").unwrap();
     }
 
-    let src_mount = Mount::with_options(src_loopdev.path(), ["subvol=some-subvol"]).unwrap();
+    let src_mount = Mount::builder()
+      .options(["subvol=some-subvol"])
+      .mount(src_loopdev.path())
+      .unwrap();
     let src_root = src_mount.path();
     assert!(src_root.join("file").exists());
 
