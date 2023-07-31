@@ -21,7 +21,6 @@ use crate::snapshot::current_time;
 use crate::snapshot::Snapshot;
 use crate::snapshot::SnapshotBase;
 use crate::snapshot::Subvol;
-use crate::util::canonicalize_non_strict;
 
 
 /// Check if a given directory represents the root of a btrfs file
@@ -150,7 +149,6 @@ pub fn backup(src: &Repo, dst: &Repo, subvol: &Path, tag: &str) -> Result<Snapsh
 
 /// Restore a subvolume from a source repository.
 pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Result<()> {
-  let subvol = canonicalize_non_strict(subvol)?;
   if let Some(parent) = subvol.parent() {
     // The subvolume is unlikely to exist (after all, it's meant to be
     // restored). However, given that the user wants to restore it we
@@ -161,8 +159,8 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
   let snapshots = src.snapshots()?;
   // Note that for restoration purposes we always ignore the tag: we
   // always restore from the most up-to-date snapshot.
-  let (snapshot, _generation) = find_most_recent_snapshot(&snapshots, &subvol, None)?
-    .with_context(|| {
+  let (snapshot, _generation) =
+    find_most_recent_snapshot(&snapshots, subvol, None)?.with_context(|| {
       // In case the given source repository does not contain any snapshots
       // for the given subvolume we cannot do anything but signal that to
       // the user.
@@ -179,7 +177,7 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
   // there is a directory where 'subvolume' points to, the command will
   // just manifest the new subvolume in this directory. So explicitly
   // guard against this case here.
-  if !snapshot_only && dst.file_ops.is_dir(&subvol)? {
+  if !snapshot_only && dst.file_ops.is_dir(subvol)? {
     bail!(
       "Cannot restore subvolume {}: a directory with this name exists",
       subvol.display()
@@ -196,7 +194,7 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
     let readonly = true;
     let () = dst
       .btrfs
-      .snapshot(&dst.path().join(snapshot.to_string()), &subvol, !readonly)?;
+      .snapshot(&dst.path().join(snapshot.to_string()), subvol, !readonly)?;
   }
   Ok(())
 }
@@ -204,13 +202,12 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
 
 /// Purge old snapshots of a subvolume from the provided repository.
 pub fn purge(repo: &Repo, subvol: &Path, tag: &str, keep_for: Duration) -> Result<()> {
-  let subvol = canonicalize_non_strict(subvol)?;
   let snapshots = repo
     .snapshots()
     .context("failed to list snapshots")?
     .into_iter()
     .map(|(snapshot, _generation)| snapshot)
-    .filter(|snapshot| snapshot.subvol == Subvol::new(&subvol) && snapshot.tag == tag);
+    .filter(|snapshot| snapshot.subvol == Subvol::new(subvol) && snapshot.tag == tag);
 
   let current_time = current_time();
   let mut to_purge = snapshots
@@ -328,14 +325,13 @@ impl Repo {
   /// If an up-to-date snapshot is present already, just return it
   /// directly.
   pub fn snapshot(&self, subvol: &Path, tag: &str) -> Result<Snapshot> {
-    let subvol = self.file_ops.canonicalize(subvol)?;
     let snapshots = self.snapshots()?;
     // When searching for the most recent snapshot in this context we
     // are looking for one with not just any but this specific tag.
-    let most_recent = find_most_recent_snapshot(&snapshots, &subvol, Some(tag))?;
+    let most_recent = find_most_recent_snapshot(&snapshots, subvol, Some(tag))?;
 
     let parent = if let Some((snapshot, generation)) = most_recent {
-      let has_changes = self.btrfs.has_changes(&subvol, *generation)?;
+      let has_changes = self.btrfs.has_changes(subvol, *generation)?;
       if !has_changes {
         return Ok(snapshot.clone())
       }
@@ -347,7 +343,7 @@ impl Repo {
     // At this point we know that we have to create a new snapshot for
     // the given subvolume, either because no snapshot was present or
     // because the subvolume has changed since it had been captured.
-    let mut snapshot = Snapshot::from_subvol_path(&subvol, tag)?;
+    let mut snapshot = Snapshot::from_subvol_path(subvol, tag)?;
     debug_assert_eq!(snapshot.number, None);
 
     // `parent` here is just referring to the most recent snapshot.
@@ -363,7 +359,7 @@ impl Repo {
 
     let readonly = true;
     let snapshot_path = self.path().join(snapshot.to_string());
-    let () = self.btrfs.snapshot(&subvol, &snapshot_path, readonly)?;
+    let () = self.btrfs.snapshot(subvol, &snapshot_path, readonly)?;
     Ok(snapshot)
   }
 
@@ -427,7 +423,6 @@ mod tests {
 
   use std::fs::read_to_string;
   use std::fs::write;
-  use std::os::unix::fs::symlink;
 
   use serial_test::serial;
 
@@ -668,34 +663,6 @@ mod tests {
     })
   }
 
-  /// Check that subvolume paths are canocicalized for backup.
-  #[test]
-  #[serial]
-  fn backup_subvolume_canonicalized() {
-    let tag = "";
-
-    with_two_btrfs(|src_root, dst_root| {
-      let src = Repo::new(src_root).unwrap();
-      let dst = Repo::new(dst_root).unwrap();
-
-      let btrfs = Btrfs::new();
-      let subvol = src_root.join("subvol");
-      let () = btrfs.create_subvol(&subvol).unwrap();
-      let () = write(subvol.join("file"), "test42").unwrap();
-
-      let snapshot = backup(&src, &dst, &subvol, tag).unwrap();
-
-      let link = src_root.join("symlink");
-      let () = symlink(subvol, &link).unwrap();
-      let new_snapshot = backup(&src, &dst, &link, tag).unwrap();
-      assert_eq!(new_snapshot, snapshot);
-
-      let subvol = src_root.join("subvol").join("..").join("subvol");
-      let new_snapshot = backup(&src, &dst, &subvol, tag).unwrap();
-      assert_eq!(new_snapshot, snapshot);
-    })
-  }
-
   /// Check that we can backup a subvolume mounted with the `subvol`
   /// option.
   #[test]
@@ -865,36 +832,6 @@ mod tests {
 
       // The snapshot should be back with the respective content.
       let content = read_to_string(src.path().join(snapshot.to_string()).join("file")).unwrap();
-      assert_eq!(content, "test42");
-    })
-  }
-
-  /// Check that subvolume paths are canocicalized for restoration.
-  #[test]
-  #[serial]
-  fn restore_canonicalized() {
-    let tag = "";
-
-    with_two_btrfs(|src_root, dst_root| {
-      let src = Repo::new(src_root).unwrap();
-      let dst = Repo::new(dst_root).unwrap();
-
-      let btrfs = Btrfs::new();
-      let subvol = src_root.join("subvol");
-      let () = btrfs.create_subvol(&subvol).unwrap();
-      let () = write(subvol.join("file"), "test42").unwrap();
-
-      let snapshot = backup(&src, &dst, &subvol, tag).unwrap();
-      let () = src.delete(&snapshot).unwrap();
-      let () = btrfs.delete_subvol(&subvol).unwrap();
-
-      let verbose_subvol = src_root.join("subvol").join("..").join("subvol");
-      let snapshot_only = false;
-      let () = restore(&dst, &src, &verbose_subvol, snapshot_only).unwrap();
-
-      let content = read_to_string(src.path().join(snapshot.to_string()).join("file")).unwrap();
-      assert_eq!(content, "test42");
-      let content = read_to_string(subvol.join("file")).unwrap();
       assert_eq!(content, "test42");
     })
   }

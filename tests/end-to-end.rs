@@ -10,6 +10,7 @@ use std::ffi::OsStr;
 use std::fs::create_dir_all;
 use std::fs::read_to_string;
 use std::fs::write;
+use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use time::Duration;
@@ -94,6 +95,61 @@ fn backup_with_distinct_repo() {
     assert_eq!(src_root.read_dir().unwrap().count(), 2);
     assert_eq!(snapshots.read_dir().unwrap().count(), 1);
     assert_eq!(dst_root.read_dir().unwrap().count(), 1);
+  })
+}
+
+/// Check that subvolume paths are canocicalized for backup.
+#[test]
+#[serial]
+fn backup_subvolume_canonicalized() {
+  with_two_btrfs(|src_root, dst_root| {
+    let btrfs = Btrfs::new();
+    let subvol = src_root.join("subvol");
+    let () = btrfs.create_subvol(&subvol).unwrap();
+    let () = write(subvol.join("file"), "test42").unwrap();
+
+    let snapshots = dst_root.join("snapshots");
+    let () = btrfs.create_subvol(&snapshots).unwrap();
+
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("backup"),
+      subvol.as_os_str(),
+      OsStr::new("--source"),
+      src_root.as_os_str(),
+      OsStr::new("--destination"),
+      snapshots.as_os_str(),
+    ];
+    let () = run(args).unwrap();
+    assert_eq!(snapshots.read_dir().unwrap().count(), 1);
+
+    let link = src_root.join("symlink");
+    let () = symlink(subvol, &link).unwrap();
+
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("backup"),
+      link.as_os_str(),
+      OsStr::new("--source"),
+      src_root.as_os_str(),
+      OsStr::new("--destination"),
+      snapshots.as_os_str(),
+    ];
+    let () = run(args).unwrap();
+    assert_eq!(snapshots.read_dir().unwrap().count(), 1);
+
+    let subvol = src_root.join("subvol").join("..").join("subvol");
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("backup"),
+      subvol.as_os_str(),
+      OsStr::new("--source"),
+      src_root.as_os_str(),
+      OsStr::new("--destination"),
+      snapshots.as_os_str(),
+    ];
+    let () = run(args).unwrap();
+    assert_eq!(snapshots.read_dir().unwrap().count(), 1);
   })
 }
 
@@ -442,6 +498,58 @@ fn restore_ignores_snapshot_tag() {
     // possible), but expect the most recent snapshot to be restored.
     let content = read_to_string(subvol.join("file")).unwrap();
     assert_eq!(content, "test-new");
+  })
+}
+
+/// Check that subvolume paths are canonicalized for restoration.
+#[test]
+#[serial]
+fn restore_subvolume_canonicalized() {
+  with_two_btrfs(|src_root, dst_root| {
+    let btrfs = Btrfs::new();
+
+    let snapshots = src_root.join("snapshots");
+    let subvol = src_root.join("subvol");
+    let () = btrfs.create_subvol(&subvol).unwrap();
+    let () = write(subvol.join("file"), "test42").unwrap();
+
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("backup"),
+      subvol.as_os_str(),
+      OsStr::new("--source"),
+      snapshots.as_os_str(),
+      OsStr::new("--destination"),
+      dst_root.as_os_str(),
+    ];
+    let () = run(args).unwrap();
+
+    let snapshot = snapshots
+      .read_dir()
+      .unwrap()
+      .next()
+      .unwrap()
+      .unwrap()
+      .path();
+    let () = btrfs.delete_subvol(&snapshot).unwrap();
+    assert_eq!(snapshots.read_dir().unwrap().count(), 0);
+
+    let () = btrfs.delete_subvol(&subvol).unwrap();
+
+    let verbose_subvol = src_root.join("subvol").join("..").join("subvol");
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("restore"),
+      verbose_subvol.as_os_str(),
+      OsStr::new("--destination"),
+      snapshots.as_os_str(),
+      OsStr::new("--source"),
+      dst_root.as_os_str(),
+    ];
+    let () = run(args).unwrap();
+
+    let content = read_to_string(subvol.join("file")).unwrap();
+    assert_eq!(content, "test42");
   })
 }
 

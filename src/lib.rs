@@ -21,10 +21,12 @@ pub mod util;
 
 use std::borrow::Cow;
 use std::ffi::OsString;
+use std::fs::canonicalize;
 use std::path::Path;
 use std::path::PathBuf;
 
 use anyhow::Context as _;
+use anyhow::Error;
 use anyhow::Result;
 
 use clap::error::ErrorKind;
@@ -45,6 +47,7 @@ use crate::repo::backup as backup_subvol;
 use crate::repo::purge as purge_subvol;
 use crate::repo::restore as restore_subvol;
 use crate::repo::Repo;
+use crate::util::canonicalize_non_strict;
 
 
 /// A helper function for creating a btrfs repository in the provided
@@ -109,12 +112,17 @@ where
 /// Handler for the `backup` sub-command.
 fn backup(backup: Backup) -> Result<()> {
   let Backup {
-    subvolumes,
+    mut subvolumes,
     destination,
     source,
     tag: Tag { tag },
     remote_command: RemoteCommand { remote_command },
   } = backup;
+
+  let () = subvolumes.iter_mut().try_for_each(|subvol| {
+    *subvol = canonicalize(&subvol)?;
+    Result::<(), Error>::Ok(())
+  })?;
 
   let dst = create_repo(&destination, remote_command)?;
 
@@ -129,12 +137,17 @@ fn backup(backup: Backup) -> Result<()> {
 /// Handler for the `restore` sub-command.
 fn restore(restore: Restore) -> Result<()> {
   let Restore {
-    subvolumes,
+    mut subvolumes,
     destination,
     source,
     remote_command: RemoteCommand { remote_command },
     snapshots_only,
   } = restore;
+
+  let () = subvolumes.iter_mut().try_for_each(|subvol| {
+    *subvol = canonicalize_non_strict(subvol)?;
+    Result::<(), Error>::Ok(())
+  })?;
 
   let src = create_repo(&source, remote_command)?;
 
@@ -153,13 +166,18 @@ fn restore(restore: Restore) -> Result<()> {
 /// Handler for the `purge` sub-command.
 fn purge(purge: Purge) -> Result<()> {
   let Purge {
-    subvolumes,
+    mut subvolumes,
     source,
     destination,
     tag: Tag { tag },
     remote_command: RemoteCommand { remote_command },
     keep_for,
   } = purge;
+
+  let () = subvolumes.iter_mut().try_for_each(|subvol| {
+    *subvol = canonicalize_non_strict(subvol)?;
+    Result::<(), Error>::Ok(())
+  })?;
 
   if let Some(destination) = destination {
     let repo = create_repo(&destination, remote_command)?;
@@ -181,9 +199,14 @@ fn purge(purge: Purge) -> Result<()> {
 fn snapshot(snapshot: Snapshot) -> Result<()> {
   let Snapshot {
     repository,
-    subvolumes,
+    mut subvolumes,
     tag: Tag { tag },
   } = snapshot;
+
+  let () = subvolumes.iter_mut().try_for_each(|subvol| {
+    *subvol = canonicalize(&subvol)?;
+    Result::<(), Error>::Ok(())
+  })?;
 
   with_repo_and_subvols(
     repository.as_deref(),
