@@ -1,8 +1,10 @@
 // Copyright (C) 2022-2023 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::borrow::Cow;
 use std::cmp::min;
 use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::fmt::Display;
 use std::io::Write as _;
 use std::path::Path;
@@ -148,6 +150,8 @@ pub struct MountBuilder {
   directory: Option<PathBuf>,
   /// The mount(8) options, provided via `-o`, if any.
   options: Option<String>,
+  /// Additional arguments to pass to the mount(8) invocation,
+  arguments: Vec<String>,
 }
 
 impl MountBuilder {
@@ -173,6 +177,16 @@ impl MountBuilder {
     self
   }
 
+  /// Provide additional arguments to the mount(8) command.
+  pub fn arguments<A, S>(mut self, args: A) -> Self
+  where
+    A: IntoIterator<Item = S>,
+    S: AsRef<str>,
+  {
+    self.arguments = args.into_iter().map(|s| s.as_ref().to_string()).collect();
+    self
+  }
+
   /// Perform the mount.
   pub fn mount<P>(self, device: P) -> Result<Mount>
   where
@@ -187,18 +201,31 @@ impl MountBuilder {
     };
 
     let () = if let Some(options) = self.options {
-      run(
-        MOUNT,
-        [
-          device.as_os_str(),
-          directory.path().as_os_str(),
-          OsStr::new("-o"),
-          options.as_ref(),
-        ],
-      )
+      let args = [
+        device.as_os_str(),
+        directory.path().as_os_str(),
+        OsStr::new("-o"),
+        options.as_ref(),
+      ];
+      let args = args.into_iter().map(Cow::from).chain(
+        self
+          .arguments
+          .into_iter()
+          .map(OsString::from)
+          .map(Cow::Owned),
+      );
+      run(MOUNT, args)?
     } else {
-      run(MOUNT, [device.as_os_str(), directory.path().as_os_str()])
-    }?;
+      let args = [device.as_os_str(), directory.path().as_os_str()];
+      let args = args.into_iter().map(Cow::from).chain(
+        self
+          .arguments
+          .into_iter()
+          .map(OsString::from)
+          .map(Cow::Owned),
+      );
+      run(MOUNT, args)?
+    };
 
     let mount = Mount { directory };
     Ok(mount)
