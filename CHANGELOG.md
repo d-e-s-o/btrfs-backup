@@ -1,5 +1,5 @@
-Unreleased
-----------
+0.2.0
+-----
 - Introduced `--tag` option to various sub-commands to "tag" snapshots
   of the same subvolume for different backup destinations
 - Added support for working with remote systems via `--remote-command`
