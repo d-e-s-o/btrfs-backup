@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #![allow(clippy::let_and_return, clippy::let_unit_value)]
-#![warn(clippy::dbg_macro)]
+#![warn(clippy::dbg_macro, clippy::unwrap_used)]
 
 #[macro_use]
 mod redefine;
@@ -14,6 +14,7 @@ mod ops;
 mod repo;
 #[doc(hidden)]
 pub mod snapshot;
+#[allow(clippy::unwrap_used)]
 #[cfg(any(test, feature = "test"))]
 pub mod test;
 #[doc(hidden)]

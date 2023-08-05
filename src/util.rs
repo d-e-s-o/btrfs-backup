@@ -205,9 +205,13 @@ pub fn canonicalize_non_strict(path: &Path) -> io::Result<PathBuf> {
         let path_bytes = path.as_os_str().as_bytes();
         // SANITY: We know that `path` has a parent (a true substring).
         //         Given that we are dealing with paths, we also know
-        //         that an trailing path separator *must* exist, meaning
+        //         that a trailing path separator *must* exist, meaning
         //         we will always be in bounds.
-        path = Path::new(OsStr::from_bytes(path_bytes.get(parent_len + 1..).unwrap()));
+        path = Path::new(OsStr::from_bytes(
+          path_bytes
+            .get(parent_len + 1..)
+            .expect("constructed path has no trailing separator"),
+        ));
       },
     }
   };
@@ -216,7 +220,9 @@ pub fn canonicalize_non_strict(path: &Path) -> io::Result<PathBuf> {
   let path_len = path.as_os_str().as_bytes().len();
   // SANITY: We know that `path` is a substring of `input` and so we can
   //         never be out-of-bounds here.
-  let unresolved = input_bytes.get(path_len..).unwrap();
+  let unresolved = input_bytes
+    .get(path_len..)
+    .expect("failed to access input path sub-string");
   let complete = resolved.join(OsStr::from_bytes(unresolved));
   // We need to make sure to normalize the result here, because while
   // the unresolved part does not actually exist on the file system, it
@@ -348,7 +354,10 @@ where
     })?;
 
   // SANITY: We know that `child1` has a stdout pipe.
-  let stdout = child1.stdout.take().unwrap();
+  let stdout = child1
+    .stdout
+    .take()
+    .expect("created process does not have stdout set");
 
   let child2 = Command::new(command2.as_ref())
     .stdin(stdout)
@@ -442,7 +451,9 @@ pub fn split_once_escaped<'str>(
 
     if !next_str.starts_with(character) {
       // If the character has not been escaped, we found our match.
-      let first = string.get(..subidx + idx).unwrap();
+      let first = string
+        .get(..subidx + idx)
+        .expect("calculated escape string sub-string out-of-bounds");
       return Some((first, next_str))
     } else {
       next_idx += 1;

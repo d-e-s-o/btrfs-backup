@@ -121,7 +121,7 @@ impl RemoteOps {
       .chain(args.into_iter().map(Either::Right).map(Either::Right));
 
     // SANITY: There will always be at least `self.command` in `iter`.
-    let command = iter.next().unwrap();
+    let command = iter.next().expect("constructed command is empty");
     (command, iter)
   }
 }

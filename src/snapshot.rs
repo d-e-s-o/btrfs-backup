@@ -58,7 +58,10 @@ static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| {
     let () = unsafe { set_soundness(Soundness::Unsound) };
   }
 
-  let offset = UtcOffset::current_local_offset().unwrap();
+  // SANITY: Offset retrieval should always succeed given our
+  //         "soundness" setting above.
+  let offset =
+    UtcOffset::current_local_offset().expect("failed to inquire current local time offset");
 
   if cfg!(test) || cfg!(feature = "test") {
     // SAFETY: The call is always safe for `Soundness::Sound`.
@@ -260,7 +263,9 @@ impl Snapshot {
       subvol: subvol.into_owned(),
       // Make sure to erase all sub-second information.
       // SANITY: 0 is always a valid millisecond.
-      timestamp: current_time().replace_millisecond(0).unwrap(),
+      timestamp: current_time()
+        .replace_millisecond(0)
+        .expect("failed to replace miliseconds"),
       tag: tag.to_string(),
       number: None,
     };

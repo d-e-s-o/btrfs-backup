@@ -282,7 +282,10 @@ impl RepoBuilder {
       btrfs,
       // SANITY: Our detected btrfs root directory should always be a
       //         prefix of `directory`.
-      repo_root: directory.strip_prefix(&root).unwrap().to_path_buf(),
+      repo_root: directory
+        .strip_prefix(&root)
+        .expect("btrfs root directory is not a prefix of the provided directory")
+        .to_path_buf(),
       btrfs_root: root,
     };
     Ok(repo)

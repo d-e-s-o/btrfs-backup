@@ -41,7 +41,9 @@ const PATH_STRING: &str = r".+";
 /// pattern:
 /// ID A gen B top level C path PATH
 static SNAPSHOTS_LINE_REGEX: Lazy<Regex> = Lazy::new(|| {
-  Regex::new(&format!(r"^ID {NUMS_STRING} gen (?P<gen>{NUMS_STRING}) top level {NUMS_STRING} path (?P<path>{PATH_STRING})$")).unwrap()
+  Regex::new(&format!(
+      r"^ID {NUMS_STRING} gen (?P<gen>{NUMS_STRING}) top level {NUMS_STRING} path (?P<path>{PATH_STRING})$"
+  )).expect("failed to create snapshot regular expression")
 });
 /// The marker ending the file list reported by the `subvolume find-new`
 /// command. If this marker is the only thing reported then no files
@@ -116,7 +118,7 @@ impl Btrfs {
       .chain(args.into_iter().map(Either::Right).map(Either::Right));
 
     // SANITY: There will always be at least `BTRFS` in `iter`.
-    let command = iter.next().unwrap();
+    let command = iter.next().expect("constructed btrfs command is empty");
     (command, iter)
   }
 
