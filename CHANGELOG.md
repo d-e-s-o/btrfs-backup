@@ -1,3 +1,8 @@
+Unreleased
+----------
+- Fixed wrong handling of root (`/`) subvolume in various sub-commands
+
+
 0.2.0
 -----
 - Introduced `--tag` option to various sub-commands to "tag" snapshots

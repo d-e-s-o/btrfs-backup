@@ -126,12 +126,16 @@ impl Subvol {
 
   /// A helper method for encoding the provided path.
   fn to_encoded_string(path: &Path) -> String {
-    let string = path.to_string_lossy();
-    let string = escape(ENCODED_COMPONENT_SEPARATOR, &string);
-    let string = string
-      .trim_matches(MAIN_SEPARATOR)
-      .replace(MAIN_SEPARATOR, ENCODED_INTRA_COMPONENT_SEPARATOR);
-    string
+    if path == Path::new(&MAIN_SEPARATOR.to_string()) {
+      ENCODED_INTRA_COMPONENT_SEPARATOR.to_string()
+    } else {
+      let string = path.to_string_lossy();
+      let string = escape(ENCODED_COMPONENT_SEPARATOR, &string);
+      let string = string
+        .trim_matches(MAIN_SEPARATOR)
+        .replace(MAIN_SEPARATOR, ENCODED_INTRA_COMPONENT_SEPARATOR);
+      string
+    }
   }
 
   /// Retrieve the encoded representation of the subvolume.
@@ -265,7 +269,7 @@ impl Snapshot {
       // SANITY: 0 is always a valid millisecond.
       timestamp: current_time()
         .replace_millisecond(0)
-        .expect("failed to replace miliseconds"),
+        .expect("failed to replace milliseconds"),
       tag: tag.to_string(),
       number: None,
     };
@@ -380,6 +384,12 @@ mod tests {
     let name = OsStr::new("vaio_home-deso-media_2019-10-27_08:23:16__1");
     let snapshot = Snapshot::from_snapshot_name(name).unwrap();
     assert_eq!(snapshot.number, Some(1));
+    assert_eq!(OsStr::new(&snapshot.to_string()), name);
+
+    let name = OsStr::new("nuc_-_2023-03-22_21:03:56_usb128gb-samsung");
+    let snapshot = Snapshot::from_snapshot_name(name).unwrap();
+    assert_eq!(snapshot.number, None);
+    assert_eq!(snapshot.subvol, Subvol::new(Path::new("/")));
     assert_eq!(OsStr::new(&snapshot.to_string()), name);
 
     let tag = "foo-baz_baz";
