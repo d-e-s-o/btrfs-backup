@@ -1,5 +1,5 @@
-Unreleased
-----------
+0.2.1
+-----
 - Fixed wrong handling of root (`/`) subvolume in various sub-commands
 - Adjusted publish workflow to also create GitHub release and Git tag
 
