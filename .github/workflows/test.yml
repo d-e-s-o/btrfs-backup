@@ -1,4 +1,4 @@
-# Copyright (C) 2023 Daniel Mueller <deso@posteo.net>
+# Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 name: Test
@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: [1.66.0, stable]
+        rust: [stable]
         profile: [dev, release]
     steps:
     - uses: actions/checkout@v3

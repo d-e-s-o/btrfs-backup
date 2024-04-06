@@ -1,6 +1,5 @@
 [![pipeline](https://github.com/d-e-s-o/btrfs-backup/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/d-e-s-o/btrfs-backup/actions/workflows/test.yml)
 [![crates.io](https://img.shields.io/crates/v/btrfs-backup.svg)](https://crates.io/crates/btrfs-backup)
-[![rustc](https://img.shields.io/badge/rustc-1.66+-blue.svg)](https://blog.rust-lang.org/2022/12/15/Rust-1.66.0.html)
 
 btrfs-backup
 ============
