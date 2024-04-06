@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #![allow(clippy::large_enum_variant, clippy::let_and_return)]
@@ -22,6 +22,7 @@ mod prog {
 #[derive(Debug, Parser)]
 struct Args {
   /// The shell for which to generate a completion script for.
+  #[clap(value_enum)]
   shell: Shell,
   /// The command for which to generate the shell completion script.
   #[clap(default_value = env!("CARGO_PKG_NAME"))]
