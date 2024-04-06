@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A module providing a fully-typed programmatic interface to
@@ -471,7 +471,7 @@ mod tests {
   #[serial]
   fn subvolumes() {
     with_btrfs(|root| {
-      let ops = LocalOps::default();
+      let ops = LocalOps;
       let btrfs = Btrfs::new();
 
       let readonly = true;
@@ -525,7 +525,7 @@ mod tests {
   #[serial]
   fn subvolumes_in_subdir() {
     with_btrfs(|root| {
-      let ops = LocalOps::default();
+      let ops = LocalOps;
       let btrfs = Btrfs::new();
 
       let subvol_name = OsStr::new("subvol");
@@ -556,7 +556,7 @@ mod tests {
   #[serial]
   fn subvol_changes() {
     with_btrfs(|root| {
-      let ops = LocalOps::default();
+      let ops = LocalOps;
       let btrfs = Btrfs::new();
 
       let subvol = root.join("root");

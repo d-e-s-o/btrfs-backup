@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::ffi::OsStr;
@@ -173,12 +173,12 @@ mod tests {
 
 
   fn for_each_file_op(test_fn: fn(&dyn FileOps)) {
-    let local_ops = LocalOps::default();
+    let local_ops = LocalOps;
     let remote_ops = RemoteOps::new(sh(), [""; 0]);
 
     [&local_ops as &dyn FileOps, &remote_ops as &dyn FileOps]
       .into_iter()
-      .for_each(|ops| test_fn(ops))
+      .for_each(test_fn)
   }
 
 

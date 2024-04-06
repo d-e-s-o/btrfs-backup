@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2024 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::BTreeSet;
@@ -262,9 +262,7 @@ impl RepoBuilder {
   where
     P: AsRef<Path>,
   {
-    let file_ops = self
-      .file_ops
-      .unwrap_or_else(|| Rc::new(LocalOps::default()));
+    let file_ops = self.file_ops.unwrap_or_else(|| Rc::new(LocalOps));
     let directory = directory.as_ref();
     let () = file_ops
       .create_dir_all(directory)
