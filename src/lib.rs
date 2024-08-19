@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2024 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #![allow(clippy::let_and_return, clippy::let_unit_value)]
@@ -121,7 +121,7 @@ fn backup(backup: Backup) -> Result<()> {
   } = backup;
 
   let () = subvolumes.iter_mut().try_for_each(|subvol| {
-    *subvol = canonicalize(&subvol)?;
+    *subvol = canonicalize(&*subvol)?;
     Result::<(), Error>::Ok(())
   })?;
 
@@ -205,7 +205,7 @@ fn snapshot(snapshot: Snapshot) -> Result<()> {
   } = snapshot;
 
   let () = subvolumes.iter_mut().try_for_each(|subvol| {
-    *subvol = canonicalize(&subvol)?;
+    *subvol = canonicalize(&*subvol)?;
     Result::<(), Error>::Ok(())
   })?;
 
@@ -235,7 +235,7 @@ where
         print!("{}", err);
         return Ok(())
       },
-      _ => return Err(err).context("failed to parse program arguments"),
+      _ => return Err(err.into()),
     },
   };
 
