@@ -121,7 +121,7 @@ fn backup(backup: Backup) -> Result<()> {
   } = backup;
 
   let () = subvolumes.iter_mut().try_for_each(|subvol| {
-    *subvol = canonicalize(&subvol)?;
+    *subvol = canonicalize(&*subvol)?;
     Result::<(), Error>::Ok(())
   })?;
 
@@ -205,7 +205,7 @@ fn snapshot(snapshot: Snapshot) -> Result<()> {
   } = snapshot;
 
   let () = subvolumes.iter_mut().try_for_each(|subvol| {
-    *subvol = canonicalize(&subvol)?;
+    *subvol = canonicalize(&*subvol)?;
     Result::<(), Error>::Ok(())
   })?;
 
