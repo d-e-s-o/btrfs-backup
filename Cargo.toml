@@ -3,7 +3,6 @@ name = "btrfs-backup"
 version = "0.2.1"
 authors = ["Daniel Mueller <deso@posteo.net>"]
 edition = "2021"
-rust-version = "1.66"
 license = "GPL-3.0-or-later"
 homepage = "https://github.com/d-e-s-o/btrfs-backup"
 repository = "https://github.com/d-e-s-o/btrfs-backup.git"
