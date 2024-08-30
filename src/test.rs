@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2024 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::borrow::Cow;
@@ -173,7 +173,7 @@ impl MountBuilder {
     O: IntoIterator<Item = S>,
     S: AsRef<str> + Display,
   {
-    self.options = join(',', options.into_iter());
+    self.options = join(',', options);
     self
   }
 
