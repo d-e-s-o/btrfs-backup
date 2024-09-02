@@ -21,7 +21,7 @@ default-run = "btrfs-backup"
 
 [features]
 # Include features relevant for testing.
-test = ["tempfile"]
+test = ["dep:tempfile"]
 
 [[bin]]
 name = "shell-complete"
