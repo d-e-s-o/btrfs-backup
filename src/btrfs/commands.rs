@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2024 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A module providing the means to create btrfs-progs commands for a
@@ -66,7 +66,8 @@ pub fn sync(
 pub fn serialize<'input, I>(
   subvol: &'input Path,
   parents: I,
-) -> impl IntoIterator<Item = &OsStr, IntoIter = impl Iterator<Item = &OsStr> + Clone> + Clone
+) -> impl IntoIterator<Item = &'input OsStr, IntoIter = impl Iterator<Item = &'input OsStr> + Clone>
+     + Clone
 where
   // TODO: Ideally we'd accept any P: AsRef<OsStr> as item, but that
   //       fails with today's borrow checker.
