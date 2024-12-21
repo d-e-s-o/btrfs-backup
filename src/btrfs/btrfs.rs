@@ -13,11 +13,10 @@ use std::path::PathBuf;
 use std::str::FromStr as _;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use std::sync::LazyLock;
 
 use anyhow::Context as _;
 use anyhow::Result;
-
-use once_cell::sync::Lazy;
 
 use regex::Regex;
 
@@ -40,7 +39,7 @@ const PATH_STRING: &str = r".+";
 /// by the snapshots() method. Each line is expected to be following the
 /// pattern:
 /// ID A gen B top level C path PATH
-static SNAPSHOTS_LINE_REGEX: Lazy<Regex> = Lazy::new(|| {
+static SNAPSHOTS_LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   Regex::new(&format!(
       r"^ID {NUMS_STRING} gen (?P<gen>{NUMS_STRING}) top level {NUMS_STRING} path (?P<path>{PATH_STRING})$"
   )).expect("failed to create snapshot regular expression")

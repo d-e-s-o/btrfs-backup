@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::borrow::Cow;
@@ -10,12 +10,11 @@ use std::fmt::Result as FmtResult;
 use std::path::Path;
 use std::path::MAIN_SEPARATOR;
 use std::str::FromStr as _;
+use std::sync::LazyLock;
 
 use anyhow::ensure;
 use anyhow::Context as _;
 use anyhow::Result;
-
-use once_cell::sync::Lazy;
 
 use time::format_description::modifier::Day;
 use time::format_description::modifier::Hour;
@@ -52,7 +51,7 @@ const ENCODED_INTRA_COMPONENT_SEPARATOR: &str = "-";
 const ENCODED_COMPONENT_SEPARATOR: &str = "_";
 
 /// The UTC time zone offset we use throughout the program.
-static UTC_OFFSET: Lazy<UtcOffset> = Lazy::new(|| {
+static UTC_OFFSET: LazyLock<UtcOffset> = LazyLock::new(|| {
   if cfg!(test) || cfg!(feature = "test") {
     // SAFETY: Our tests do not mutate the environment.
     let () = unsafe { set_soundness(Soundness::Unsound) };
