@@ -4,6 +4,13 @@
 name: Build
 
 on:
+  workflow_call:
+    inputs:
+      upload-release:
+        description: 'The release to upload artifacts to, if any'
+        default: ''
+        required: false
+        type: string
   workflow_dispatch:
 
 jobs:
@@ -18,9 +25,16 @@ jobs:
         with:
           target: x86_64-unknown-linux-musl
       - run: |
-          cargo install --bin=btrfs-backup --path=. --root=. --target x86_64-unknown-linux-musl
+          CARGO_PROFILE_RELEASE_DEBUG=false CARGO_PROFILE_RELEASE_STRIP=true cargo install --bin=btrfs-backup --path=. --root=. --target x86_64-unknown-linux-musl
           strip bin/btrfs-backup
       - uses: actions/upload-artifact@v4
         with:
           name: btrfs-backup
           path: bin/btrfs-backup
+      - if: ${{ inputs.upload-release != '' }}
+        name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mv bin/btrfs-backup btrfs-backup-${{ matrix.target }}
+          gh release upload ${{ inputs.upload-release }} btrfs-backup-${{ matrix.target }}
