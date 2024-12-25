@@ -24,8 +24,6 @@ use time::format_description::modifier::Second;
 use time::format_description::modifier::Year;
 use time::format_description::Component;
 use time::format_description::FormatItem;
-use time::util::local_offset::set_soundness;
-use time::util::local_offset::Soundness;
 use time::Date;
 use time::OffsetDateTime;
 use time::PrimitiveDateTime;
@@ -52,22 +50,9 @@ const ENCODED_COMPONENT_SEPARATOR: &str = "_";
 
 /// The UTC time zone offset we use throughout the program.
 static UTC_OFFSET: LazyLock<UtcOffset> = LazyLock::new(|| {
-  if cfg!(test) || cfg!(feature = "test") {
-    // SAFETY: Our tests do not mutate the environment.
-    let () = unsafe { set_soundness(Soundness::Unsound) };
-  }
-
   // SANITY: Offset retrieval should always succeed given our
   //         "soundness" setting above.
-  let offset =
-    UtcOffset::current_local_offset().expect("failed to inquire current local time offset");
-
-  if cfg!(test) || cfg!(feature = "test") {
-    // SAFETY: The call is always safe for `Soundness::Sound`.
-    let () = unsafe { set_soundness(Soundness::Sound) };
-  }
-
-  offset
+  UtcOffset::current_local_offset().expect("failed to inquire current local time offset")
 });
 
 /// The date format used in snapshot names.
