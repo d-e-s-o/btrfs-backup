@@ -1,3 +1,8 @@
+0.2.2
+-----
+- Removed `once_cell` dependency
+
+
 0.2.1
 -----
 - Fixed wrong handling of root (`/`) subvolume in various sub-commands

@@ -50,8 +50,6 @@ const ENCODED_COMPONENT_SEPARATOR: &str = "_";
 
 /// The UTC time zone offset we use throughout the program.
 static UTC_OFFSET: LazyLock<UtcOffset> = LazyLock::new(|| {
-  // SANITY: Offset retrieval should always succeed given our
-  //         "soundness" setting above.
   UtcOffset::current_local_offset().expect("failed to inquire current local time offset")
 });
 
