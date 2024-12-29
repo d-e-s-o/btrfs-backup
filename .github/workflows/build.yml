@@ -36,5 +36,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mv bin/btrfs-backup btrfs-backup-${{ matrix.target }}
-          gh release upload ${{ inputs.upload-release }} btrfs-backup-${{ matrix.target }}
+          mv bin/btrfs-backup btrfs-backup
+          gh release upload ${{ inputs.upload-release }} btrfs-backup
