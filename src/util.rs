@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2025 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::borrow::Cow;
@@ -24,7 +24,7 @@ use anyhow::Result;
 
 
 /// An enum used for wrapping two different iterator types.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Either<L, R> {
   /// The first type.
   Left(L),

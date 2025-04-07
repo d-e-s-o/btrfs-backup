@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2025 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A module providing the means to create btrfs-progs commands for a
@@ -281,8 +281,8 @@ mod tests {
     assert_eq!(command, "subvolume list -o /usr/bin/baz -r");
 
     let subvol = Path::new("/var/my-subvol");
-    let gen = 1337;
-    let command = stringify_cow(diff(subvol, gen));
+    let gen_ = 1337;
+    let command = stringify_cow(diff(subvol, gen_));
     assert_eq!(command, "subvolume find-new /var/my-subvol 1337");
 
     let fs = Path::new("another-fs");
