@@ -1,5 +1,7 @@
-// Copyright (C) 2022-2024 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2025 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Test-only utility functionality.
 
 use std::borrow::Cow;
 use std::cmp::min;
@@ -34,6 +36,7 @@ const UMOUNT: &str = "umount";
 
 
 /// A type representing loop back devices.
+#[derive(Debug)]
 struct LoopDev {
   /// The path to the loop back device.
   device: PathBuf,
@@ -113,6 +116,7 @@ impl Drop for LoopDev {
 
 
 /// A loop back device containing a btrfs file system.
+#[derive(Debug)]
 pub struct BtrfsDev {
   /// The used loop back device.
   device: LoopDev,
@@ -233,6 +237,7 @@ impl MountBuilder {
 }
 
 
+#[derive(Debug)]
 enum Directory {
   /// An existing directory.
   Existing(PathBuf),
@@ -251,6 +256,7 @@ impl Directory {
 
 
 /// An object representing a mounted file system.
+#[derive(Debug)]
 pub struct Mount {
   /// The directory in which the file system was mounted.
   directory: Directory,

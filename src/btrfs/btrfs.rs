@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2025 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A module providing a fully-typed programmatic interface to
@@ -36,8 +36,8 @@ const BTRFS: &str = "btrfs";
 const NUMS_STRING: &str = r"[0-9]+";
 const PATH_STRING: &str = r".+";
 /// The format of a line as retrieved by executing the command returned
-/// by the snapshots() method. Each line is expected to be following the
-/// pattern:
+/// by the `snapshots()` method. Each line is expected to be following
+/// the pattern:
 /// ID A gen B top level C path PATH
 static SNAPSHOTS_LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   Regex::new(&format!(
@@ -194,11 +194,11 @@ impl Btrfs {
         let captures = SNAPSHOTS_LINE_REGEX
           .captures(line)
           .with_context(|| format!("failed to parse snapshot output line: `{line}`"))?;
-        let gen = &captures["gen"];
-        let gen = usize::from_str(gen)
-          .with_context(|| format!("failed to parse generation string `{gen}` as integer"))?;
+        let gen_ = &captures["gen"];
+        let gen_ = usize::from_str(gen_)
+          .with_context(|| format!("failed to parse generation string `{gen_}` as integer"))?;
         let path = PathBuf::from(&captures["path"]);
-        Ok((path, gen))
+        Ok((path, gen_))
       })
       .collect::<Result<_>>()?;
 
@@ -263,25 +263,25 @@ impl Btrfs {
     let subvols = self
       .subvolumes_impl(&directory, readonly)?
       .into_iter()
-      .filter_map(|(subvol, gen)| {
+      .filter_map(|(subvol, gen_)| {
         subvol
           .strip_prefix(&subvol_path)
           .ok()
           .map(Path::to_path_buf)
-          .map(|subvol| (subvol, gen))
+          .map(|subvol| (subvol, gen_))
       })
-      .map(|(subvol, gen)| (make_absolute(&subvol), gen))
+      .map(|(subvol, gen_)| (make_absolute(&subvol), gen_))
       // We need to work around the btrfs problem that not necessarily
       // all subvolumes listed are located in our repository's
       // directory. This is done as one step along with converting the
       // absolute subvolume paths to relative ones where we just sort
       // out everything not below our directory.
-      .filter_map(|(subvol, gen)| {
+      .filter_map(|(subvol, gen_)| {
         subvol
           .strip_prefix(directory.as_ref())
           .ok()
           .map(Path::to_path_buf)
-          .map(|subvol| (subvol, gen))
+          .map(|subvol| (subvol, gen_))
       })
       .collect();
 

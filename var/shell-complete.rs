@@ -1,7 +1,7 @@
-// Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2025 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#![allow(clippy::large_enum_variant, clippy::let_and_return)]
+//! Shell completion functionality for btrfs-backup.
 
 use std::io::stdout;
 

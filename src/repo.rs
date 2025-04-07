@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2025 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::BTreeSet;
@@ -87,7 +87,7 @@ fn find_most_recent_snapshot<'snaps>(
 
   // The most recent snapshot (i.e., the one with the largest time
   // stamp) will be the last one.
-  Ok(snapshots.into_iter().last())
+  Ok(snapshots.into_iter().next_back())
 }
 
 
@@ -392,14 +392,14 @@ impl Repo {
       .into_iter()
       // We are only interested in snapshots *directly* inside of
       // `repo_root`.
-      .filter_map(|(path, gen)| {
+      .filter_map(|(path, gen_)| {
         // For relative paths, Path::parent returns Some("") if there is
         // no parent.
         if path.parent() == Some(Path::new("")) {
           path
             .file_name()
             .and_then(|snapshot| Snapshot::from_snapshot_name(snapshot).ok())
-            .map(|snapshot| (snapshot, gen))
+            .map(|snapshot| (snapshot, gen_))
         } else {
           None
         }

@@ -1,7 +1,7 @@
-// Copyright (C) 2023 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2025 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#![allow(clippy::let_and_return, clippy::let_unit_value)]
+#![allow(clippy::unwrap_used)]
 
 //! End-to-end tests for `btrfs_backup`, mostly focused on argument
 //! handling.
