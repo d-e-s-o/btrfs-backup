@@ -46,6 +46,7 @@ jobs:
         # Please update the build workflow cross-compile matrix when
         # adding a new target here.
         target: [
+          arm-unknown-linux-musleabi,
           armv7-unknown-linux-musleabihf,
           x86_64-unknown-linux-musl,
         ]

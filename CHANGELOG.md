@@ -1,7 +1,7 @@
 Unreleased
 ----------
-- Added statically linked build for `armv7-unknown-linux-musleabihf`
-  target
+- Added statically linked builds for `arm-unknown-linux-musleabi` and
+  `armv7-unknown-linux-musleabihf` targets
 
 
 0.2.2
