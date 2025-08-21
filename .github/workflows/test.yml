@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
+# Copyright (C) 2023-2025 Daniel Mueller <deso@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 name: Test
@@ -37,6 +37,24 @@ jobs:
       run: |
         cargo build --profile=${{ matrix.profile }} --all-features --bins --tests
         cargo test --profile=${{ matrix.profile }} --all-features
+  build-cross:
+    name: Cross-compile [${{ matrix.target }}]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Please update the build workflow cross-compile matrix when
+        # adding a new target here.
+        target: [
+          armv7-unknown-linux-musleabihf,
+          x86_64-unknown-linux-musl,
+        ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+      - run: cargo build
   clippy:
     name: Lint with clippy
     runs-on: ubuntu-latest
