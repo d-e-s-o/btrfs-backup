@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
+# Copyright (C) 2023-2025 Daniel Mueller <deso@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 name: Build
@@ -15,26 +15,29 @@ on:
 
 jobs:
   build:
-    name: Build statically linked binary
+    name: Build
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [
+          armv7-unknown-linux-musleabihf,
+          x86_64-unknown-linux-musl,
+        ]
     steps:
       - uses: actions/checkout@v5
-      - name: Install dependencies
-        run: sudo apt-get install --yes --no-install-recommends musl-tools
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/setup-cross-toolchain-action@v1
         with:
-          target: x86_64-unknown-linux-musl
+          target: ${{ matrix.target }}
       - run: |
-          CARGO_PROFILE_RELEASE_DEBUG=false CARGO_PROFILE_RELEASE_STRIP=true cargo install --bin=btrfs-backup --path=. --root=. --target x86_64-unknown-linux-musl
-          strip bin/btrfs-backup
+          CARGO_PROFILE_RELEASE_DEBUG=false CARGO_PROFILE_RELEASE_STRIP=true cargo install --bin=btrfs-backup --path=. --root=. --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
-          name: btrfs-backup
+          name: btrfs-backup-${{ matrix.target }}
           path: bin/btrfs-backup
       - if: ${{ inputs.upload-release != '' }}
         name: Upload release asset
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mv bin/btrfs-backup btrfs-backup
-          gh release upload ${{ inputs.upload-release }} btrfs-backup
+          mv bin/btrfs-backup btrfs-backup-${{ matrix.target }}
+          gh release upload ${{ inputs.upload-release }} btrfs-backup-${{ matrix.target }}

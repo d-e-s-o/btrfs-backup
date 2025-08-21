@@ -1,3 +1,9 @@
+Unreleased
+----------
+- Added statically linked build for `armv7-unknown-linux-musleabihf`
+  target
+
+
 0.2.2
 -----
 - Removed `once_cell` dependency
