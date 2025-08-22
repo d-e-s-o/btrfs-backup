@@ -1,5 +1,5 @@
-Unreleased
-----------
+0.2.3
+-----
 - Added statically linked builds for `arm-unknown-linux-musleabi` and
   `armv7-unknown-linux-musleabihf` targets
 
