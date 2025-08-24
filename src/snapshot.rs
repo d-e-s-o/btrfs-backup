@@ -7,6 +7,7 @@ use std::fmt::Display;
 use std::fmt::Error as FmtError;
 use std::fmt::Formatter;
 use std::fmt::Result as FmtResult;
+use std::io;
 use std::path::Path;
 use std::path::MAIN_SEPARATOR;
 use std::str::FromStr as _;
@@ -70,6 +71,9 @@ const TIME_FORMAT: [FormatItem<'static>; 5] = [
   FormatItem::Literal(b":"),
   FormatItem::Component(Component::Second(Second::default())),
 ];
+
+static HOST: LazyLock<io::Result<String>> =
+  LazyLock::new(|| uname().map(|info| info.nodename.to_lowercase()));
 
 
 /// Retrieve the current local time.
@@ -150,9 +154,13 @@ impl SnapshotBase<'_> {
       subvol.display()
     );
 
-    let info = uname().context("failed to retrieve uname system information")?;
     let base_name = SnapshotBase {
-      host: Cow::Owned(info.nodename.to_lowercase()),
+      host: Cow::Owned(
+        HOST
+          .as_deref()
+          .context("failed to retrieve uname system information")?
+          .to_string(),
+      ),
       subvol: Cow::Owned(Subvol::new(subvol)),
     };
     Ok(base_name)
