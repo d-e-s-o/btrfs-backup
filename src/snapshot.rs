@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2025 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::borrow::Cow;
@@ -168,6 +168,42 @@ impl SnapshotBase<'_> {
 }
 
 
+#[derive(Debug, Default)]
+pub struct Builder {
+  /// The snapshot's tag.
+  tag: String,
+}
+
+impl Builder {
+  /// Set the snapshot's tag.
+  pub fn tag(mut self, tag: &str) -> Self {
+    self.tag = tag.to_string();
+    self
+  }
+
+  /// Create a new snapshot name using the provided subvolume path
+  /// together with information gathered from the system (such as the
+  /// current time and date).
+  pub fn try_build(self, subvol: &Path) -> Result<Snapshot> {
+    let Self { tag } = self;
+    let SnapshotBase { host, subvol } = SnapshotBase::from_subvol_path(subvol)?;
+
+    let snapshot = Snapshot {
+      host: host.into_owned(),
+      subvol: subvol.into_owned(),
+      // Make sure to erase all sub-second information.
+      // SANITY: 0 is always a valid millisecond.
+      timestamp: current_time()
+        .replace_millisecond(0)
+        .expect("failed to replace milliseconds"),
+      tag,
+      number: None,
+    };
+    Ok(snapshot)
+  }
+}
+
+
 /// A snapshot name and its identifying components.
 #[derive(Clone, Debug, Eq, Ord, PartialOrd, PartialEq)]
 pub struct Snapshot {
@@ -246,24 +282,8 @@ impl Snapshot {
     })
   }
 
-  /// Create a new snapshot name using the provided subvolume path
-  /// together with information gathered from the system (such as the
-  /// current time and date).
-  pub fn from_subvol_path(subvol: &Path, tag: &str) -> Result<Snapshot> {
-    let SnapshotBase { host, subvol } = SnapshotBase::from_subvol_path(subvol)?;
-
-    let slf = Self {
-      host: host.into_owned(),
-      subvol: subvol.into_owned(),
-      // Make sure to erase all sub-second information.
-      // SANITY: 0 is always a valid millisecond.
-      timestamp: current_time()
-        .replace_millisecond(0)
-        .expect("failed to replace milliseconds"),
-      tag: tag.to_string(),
-      number: None,
-    };
-    Ok(slf)
+  pub fn builder() -> Builder {
+    Builder::default()
   }
 
   /// Create a new `Snapshot` object based on the current one but with
@@ -343,11 +363,10 @@ mod tests {
   /// Check that trailing path separators are handled properly.
   #[test]
   fn snapshot_trailing_path_separator_handling() {
-    let tag = "";
     let path1 = Path::new("/tmp/foobar");
     let path2 = Path::new("/tmp/foobar/");
-    let snapshot1 = Snapshot::from_subvol_path(path1, tag).unwrap();
-    let snapshot2 = Snapshot::from_subvol_path(path2, tag).unwrap();
+    let snapshot1 = Snapshot::builder().try_build(path1).unwrap();
+    let snapshot2 = Snapshot::builder().try_build(path2).unwrap();
 
     assert_eq!(snapshot1.subvol, snapshot2.subvol);
   }
@@ -383,7 +402,7 @@ mod tests {
     assert_eq!(OsStr::new(&snapshot.to_string()), name);
 
     let tag = "foo-baz_baz";
-    let snapshot = Snapshot::from_subvol_path(path, tag).unwrap();
+    let snapshot = Snapshot::builder().tag(tag).try_build(path).unwrap();
     let snapshot_name = snapshot.to_string();
     let parsed = Snapshot::from_snapshot_name(snapshot_name.as_ref()).unwrap();
     assert_eq!(parsed, snapshot);
@@ -419,8 +438,7 @@ mod tests {
   #[test]
   fn snapshot_subvolume_comparison() {
     fn test(path: &Path) {
-      let tag = "";
-      let snapshot = Snapshot::from_subvol_path(path, tag).unwrap();
+      let snapshot = Snapshot::builder().try_build(path).unwrap();
       let name = snapshot.to_string();
       let snapshot = Snapshot::from_snapshot_name(name.as_ref()).unwrap();
       assert_eq!(snapshot.subvol, Subvol::new(path));

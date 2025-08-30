@@ -344,7 +344,7 @@ impl Repo {
     // At this point we know that we have to create a new snapshot for
     // the given subvolume, either because no snapshot was present or
     // because the subvolume has changed since it had been captured.
-    let mut snapshot = Snapshot::from_subvol_path(subvol, tag)?;
+    let mut snapshot = Snapshot::builder().tag(tag).try_build(subvol)?;
     debug_assert_eq!(snapshot.number, None);
 
     if let Some(most_recent) = most_recent {
@@ -624,11 +624,9 @@ mod tests {
   #[test]
   #[serial]
   fn writable_snapshot_listing() {
-    let tag = "";
-
     with_btrfs(|root| {
       let btrfs = Btrfs::new();
-      let snapshot = Snapshot::from_subvol_path(Path::new("/foobar"), tag).unwrap();
+      let snapshot = Snapshot::builder().try_build(Path::new("/foobar")).unwrap();
       let subvol = root.join(snapshot.to_string());
       // Create a writable subvolume with a valid snapshot name.
       let () = btrfs.create_subvol(&subvol).unwrap();

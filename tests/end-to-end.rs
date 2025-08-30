@@ -452,14 +452,12 @@ fn backup_remote() {
 #[test]
 #[serial]
 fn purge_snapshots() {
-  let tag = "";
-
   with_btrfs(|root| {
     let btrfs = Btrfs::new();
     let subvol1 = root.join("some-subvol").join("..").join("some-subvol");
     let subvol2 = root.join("some-other-subvol");
 
-    let snapshot1 = Snapshot::from_subvol_path(&normalize(&subvol1), tag).unwrap();
+    let snapshot1 = Snapshot::builder().try_build(&normalize(&subvol1)).unwrap();
     let mut snapshot2 = snapshot1.clone();
     snapshot2.timestamp -= Duration::weeks(2);
     let mut snapshot3 = snapshot1.clone();
@@ -468,7 +466,7 @@ fn purge_snapshots() {
     snapshot4.timestamp -= Duration::weeks(5);
 
     // Also create a snapshot for `subvol2`.
-    let mut snapshot5 = Snapshot::from_subvol_path(&subvol2, tag).unwrap();
+    let mut snapshot5 = Snapshot::builder().try_build(&subvol2).unwrap();
     snapshot5.timestamp -= Duration::weeks(5);
 
     let snapshots = [&snapshot1, &snapshot2, &snapshot3, &snapshot4, &snapshot5];
@@ -508,8 +506,7 @@ fn purge_leaves_differently_tagged() {
     let btrfs = Btrfs::new();
     let subvol = root.join("some-subvol");
 
-    let tag = "";
-    let snapshot1 = Snapshot::from_subvol_path(&subvol, tag).unwrap();
+    let snapshot1 = Snapshot::builder().try_build(&subvol).unwrap();
     let mut snapshot2 = snapshot1.clone();
     snapshot2.timestamp -= Duration::weeks(2);
     let mut snapshot3 = snapshot1.clone();
@@ -519,7 +516,7 @@ fn purge_leaves_differently_tagged() {
 
     // The last snapshot is outdated but differently tagged.
     let tag = "tagged";
-    let mut snapshot5 = Snapshot::from_subvol_path(&subvol, tag).unwrap();
+    let mut snapshot5 = Snapshot::builder().tag(tag).try_build(&subvol).unwrap();
     snapshot5.timestamp -= Duration::weeks(6);
 
     let snapshots = [&snapshot1, &snapshot2, &snapshot3, &snapshot4, &snapshot5];
@@ -557,11 +554,10 @@ fn purge_leaves_differently_tagged() {
 #[serial]
 fn purge_leaves_most_recent() {
   fn purge_leaves_most_recent_impl(src: &Path, dst: &Path, to_test: &Path) {
-    let tag = "";
     let btrfs = Btrfs::new();
     let subvol = to_test.join("some-subvol");
 
-    let snapshot = Snapshot::from_subvol_path(&subvol, tag).unwrap();
+    let snapshot = Snapshot::builder().try_build(&subvol).unwrap();
     let mut snapshot1 = snapshot.clone();
     snapshot1.timestamp -= Duration::weeks(3);
     let mut snapshot2 = snapshot.clone();
@@ -606,13 +602,11 @@ fn purge_leaves_most_recent() {
 #[test]
 #[serial]
 fn purge_destination_snapshots() {
-  let tag = "";
-
   with_two_btrfs(|src, dst| {
     let btrfs = Btrfs::new();
     let subvol = dst.join("some-subvol").join("..").join("some-subvol");
 
-    let snapshot1 = Snapshot::from_subvol_path(&normalize(&subvol), tag).unwrap();
+    let snapshot1 = Snapshot::builder().try_build(&normalize(&subvol)).unwrap();
     let mut snapshot2 = snapshot1.clone();
     snapshot2.timestamp -= Duration::weeks(1);
     let mut snapshot3 = snapshot1.clone();
@@ -656,13 +650,11 @@ fn purge_destination_snapshots() {
 #[test]
 #[serial]
 fn purge_remote() {
-  let tag = "";
-
   with_btrfs_chroot(|root| {
     let btrfs = Btrfs::new();
     let subvol = root.join("some-subvol");
 
-    let snapshot1 = Snapshot::from_subvol_path(&subvol, tag).unwrap();
+    let snapshot1 = Snapshot::builder().try_build(&subvol).unwrap();
     let mut snapshot2 = snapshot1.clone();
     snapshot2.timestamp -= Duration::weeks(2);
     let mut snapshot3 = snapshot1.clone();
