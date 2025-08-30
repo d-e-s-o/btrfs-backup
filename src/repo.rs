@@ -331,7 +331,7 @@ impl Repo {
     // are looking for one with not just any but this specific tag.
     let most_recent = find_most_recent_snapshot(&snapshots, subvol, Some(tag))?;
 
-    let parent = if let Some((snapshot, generation)) = most_recent {
+    let most_recent = if let Some((snapshot, generation)) = most_recent {
       let has_changes = self.btrfs.has_changes(subvol, *generation)?;
       if !has_changes {
         return Ok(snapshot.clone())
@@ -347,8 +347,7 @@ impl Repo {
     let mut snapshot = Snapshot::from_subvol_path(subvol, tag)?;
     debug_assert_eq!(snapshot.number, None);
 
-    // `parent` here is just referring to the most recent snapshot.
-    if let Some(most_recent) = parent {
+    if let Some(most_recent) = most_recent {
       // If the snapshot has the same base information as the most
       // recent one (including time stamp), disambiguate it by using the
       // most recent snapshot's number incremented by one. The snapshot
