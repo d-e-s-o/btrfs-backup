@@ -54,6 +54,7 @@ time = {version = "0.3.37", features = ["formatting", "local-offset", "parsing"]
 uname = "0.1.1"
 
 [dev-dependencies]
+btrfs-backup = { path = ".", features = ["test"] }
 glob = "0.3.1"
 goblin = "0.10.0"
 memmap = "0.7.0"
