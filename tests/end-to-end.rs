@@ -174,11 +174,14 @@ fn collect_deps(bin: PathBuf, deps: &mut HashMap<PathBuf, Vec<PathBuf>>) -> Resu
     return Ok(())
   }
 
-  let file = File::open(&bin)?;
+  let file =
+    File::open(&bin).with_context(|| format!("failed to open `{}` for reading", bin.display()))?;
   // SAFETY: The function is always safe to call.
-  let mmap = unsafe { Mmap::map(&file)? };
+  let mmap = unsafe { Mmap::map(&file) }
+    .with_context(|| format!("failed to memory map `{}`", bin.display()))?;
 
-  let elf = elf::Elf::parse(&mmap)?;
+  let elf = elf::Elf::parse(&mmap)
+    .with_context(|| format!("failed to parse ELF file `{}`", bin.display()))?;
   let mut libs = elf
     .libraries
     .iter()
