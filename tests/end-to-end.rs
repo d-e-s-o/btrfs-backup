@@ -19,6 +19,7 @@ use std::fs::write;
 use std::fs::File;
 use std::io::BufRead as _;
 use std::io::BufReader;
+use std::io::Cursor;
 use std::io::ErrorKind;
 use std::os::unix::fs::symlink;
 use std::os::unix::fs::PermissionsExt as _;
@@ -32,6 +33,7 @@ use anyhow::Result;
 
 use glob::glob;
 use goblin::elf;
+use goblin::error::Error as GoblinError;
 use memmap::Mmap;
 use serial_test::serial;
 use time::Duration;
@@ -181,10 +183,15 @@ fn collect_deps(bin: PathBuf, deps: &mut HashMap<PathBuf, Vec<PathBuf>>) -> Resu
   let mmap = unsafe { Mmap::map(&file) }
     .with_context(|| format!("failed to memory map `{}`", bin.display()))?;
 
-  let elf = elf::Elf::parse(&mmap)
-    .with_context(|| format!("failed to parse ELF file `{}`", bin.display()))?;
-
-  collect_deps_elf(bin, elf, deps)
+  let result = elf::Elf::parse(&mmap);
+  if let Err(GoblinError::BadMagic(..)) = result {
+    // If we see a magic number mismatch, we may be dealing with a
+    // simple shell script. We try our best to handle those as well.
+    collect_deps_sh(bin, mmap, deps)
+  } else {
+    let elf = result.with_context(|| format!("failed to parse ELF file `{}`", bin.display()))?;
+    collect_deps_elf(bin, elf, deps)
+  }
 }
 
 fn collect_deps_elf(
@@ -210,6 +217,46 @@ fn collect_deps_elf(
 
   Ok(())
 }
+
+fn collect_deps_sh(
+  bin: PathBuf,
+  mmap: Mmap,
+  deps: &mut HashMap<PathBuf, Vec<PathBuf>>,
+) -> Result<()> {
+  let cursor = Cursor::new(&mmap[..]);
+  let reader = BufReader::new(cursor);
+  // TODO: Ideally we'd not use `String` based parsing here, but work
+  //       without assuming an encoding. It's just so much more
+  //       painful...
+  let mut lines = reader.lines();
+  let line = if let Some(result) = lines.next() {
+    result.with_context(|| format!("failed to read first line from `{}`", bin.display()))?
+  } else {
+    // The file seems to be empty.
+    let _previous = deps.insert(bin, Vec::new());
+    return Ok(())
+  };
+
+  let command = line
+    .strip_prefix("#!")
+    .with_context(|| format!("`{}` does not start with a shebang ('#!')", bin.display()))?;
+
+  let path = command
+    .split(' ')
+    .next()
+    .with_context(|| format!("failed to parse interpreter used by `{}`", bin.display()))?;
+  let path = PathBuf::from(path);
+
+  // Note that scripts could obviously reference many more commands. We
+  // can't recognize them, however, similarly to how we can't figure out
+  // whether an ELF file requires, say, a configuration file somewhere.
+  // So just operate on the basis that there aren't any other
+  // dependencies.
+  let _previous = deps.insert(bin, vec![path.clone()]);
+
+  collect_deps(path, deps)
+}
+
 
 /// Copy a list of files below a destination directory.
 ///
