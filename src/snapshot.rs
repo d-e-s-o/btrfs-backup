@@ -76,10 +76,28 @@ static HOST: LazyLock<io::Result<String>> =
   LazyLock::new(|| uname().map(|info| info.nodename.to_lowercase()));
 
 
+/// Retrieve the system's host name.
+#[inline]
+pub fn hostname() -> Result<String> {
+  let host = HOST
+    .as_deref()
+    .context("failed to retrieve uname system information")?
+    .to_string();
+  Ok(host)
+}
+
+
 /// Retrieve the current local time.
 #[inline]
 pub fn current_time() -> OffsetDateTime {
   OffsetDateTime::now_utc().to_offset(*UTC_OFFSET)
+}
+
+
+/// Retrieve the datetime offset to the UTC time zone.
+#[inline]
+pub fn utc_offset() -> UtcOffset {
+  *UTC_OFFSET
 }
 
 
@@ -155,12 +173,7 @@ impl SnapshotBase<'_> {
     );
 
     let base_name = SnapshotBase {
-      host: Cow::Owned(
-        HOST
-          .as_deref()
-          .context("failed to retrieve uname system information")?
-          .to_string(),
-      ),
+      host: Cow::Owned(hostname()?),
       subvol: Cow::Owned(Subvol::new(subvol)),
     };
     Ok(base_name)
@@ -170,11 +183,19 @@ impl SnapshotBase<'_> {
 
 #[derive(Debug, Default)]
 pub struct Builder {
+  /// The snapshot's time stamp.
+  timestamp: Option<OffsetDateTime>,
   /// The snapshot's tag.
   tag: String,
 }
 
 impl Builder {
+  /// Set the snapshot's time stamp.
+  pub fn timestamp(mut self, timestamp: OffsetDateTime) -> Self {
+    self.timestamp = Some(timestamp);
+    self
+  }
+
   /// Set the snapshot's tag.
   pub fn tag(mut self, tag: &str) -> Self {
     self.tag = tag.to_string();
@@ -185,7 +206,7 @@ impl Builder {
   /// together with information gathered from the system (such as the
   /// current time and date).
   pub fn try_build(self, subvol: &Path) -> Result<Snapshot> {
-    let Self { tag } = self;
+    let Self { timestamp, tag } = self;
     let SnapshotBase { host, subvol } = SnapshotBase::from_subvol_path(subvol)?;
 
     let snapshot = Snapshot {
@@ -193,7 +214,8 @@ impl Builder {
       subvol: subvol.into_owned(),
       // Make sure to erase all sub-second information.
       // SANITY: 0 is always a valid millisecond.
-      timestamp: current_time()
+      timestamp: timestamp
+        .unwrap_or_else(current_time)
         .replace_millisecond(0)
         .expect("failed to replace milliseconds"),
       tag,

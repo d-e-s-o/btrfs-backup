@@ -60,6 +60,7 @@ goblin = "0.10.0"
 memmap = "0.7.0"
 serial_test = "3.0.0"
 tempfile = "3.3.0"
+time-macros = "0.2.24"
 
 [lints.rust]
 deprecated-safe = "warn"
@@ -87,4 +88,5 @@ large-enum-variant = "warn"
 redundant-closure-for-method-calls = "warn"
 unchecked-duration-subtraction = "warn"
 uninlined-format-args = "warn"
+unnecessary-literal-unwrap = "allow"
 unwrap-used = "warn"

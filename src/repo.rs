@@ -426,6 +426,10 @@ mod tests {
 
   use serial_test::serial;
 
+  use time_macros::datetime;
+
+  use crate::snapshot::hostname;
+  use crate::snapshot::utc_offset;
   use crate::snapshot::Subvol;
   use crate::test::with_btrfs;
   use crate::test::with_two_btrfs;
@@ -588,6 +592,84 @@ mod tests {
       assert_eq!(next.0.subvol, snapshot.subvol);
       assert_ne!(next.1, 0);
     })
+  }
+
+  /// Check that our logic for finding the most recent snapshot works as
+  /// expected.
+  #[test]
+  fn recent_snapshot_finding() {
+    let subvols = [
+      "host_documents_2023-03-21_22:20:23_",
+      "host_documents_2023-03-21_23:00:51_tag2",
+      "host_documents_2025-08-03_20:06:53_tag1",
+      "host_documents_2025-08-07_18:24:40_tag1",
+      "host_documents_2025-09-03_08:26:25_tag1",
+      "host_local_2025-08-03_20:06:57_tag1",
+      "host_local_2025-08-07_18:26:48_tag1",
+      "host_local_2025-09-01_21:31:37_tag1",
+      "host_local_2025-09-02_07:47:45_",
+    ];
+
+    let snapshots = subvols
+      .iter()
+      .enumerate()
+      .map(|(gen_, subvol)| {
+        let mut snapshot = Snapshot::from_snapshot_name(OsStr::new(subvol)).unwrap();
+        snapshot.host = hostname().unwrap();
+        (snapshot, gen_)
+      })
+      .collect::<Vec<_>>();
+    assert!(snapshots.is_sorted());
+
+    // /documents subvolume
+
+    let subvol = Path::new("/documents");
+    let tag = None;
+    let (snapshot, _gen) = find_most_recent_snapshot(&snapshots, subvol, tag)
+      .unwrap()
+      .unwrap();
+    assert_eq!(snapshot.subvol, Subvol::new(subvol));
+    assert_eq!(
+      snapshot.timestamp,
+      datetime!(2025-09-03 08:26:25).assume_offset(utc_offset())
+    );
+    assert_eq!(snapshot.tag, "tag1");
+
+    let tag = Some("tag2");
+    let (snapshot, _gen) = find_most_recent_snapshot(&snapshots, subvol, tag)
+      .unwrap()
+      .unwrap();
+    assert_eq!(snapshot.subvol, Subvol::new(subvol));
+    assert_eq!(
+      snapshot.timestamp,
+      datetime!(2023-03-21 23:00:51).assume_offset(utc_offset())
+    );
+    assert_eq!(snapshot.tag, tag.unwrap_or_default());
+
+    // /local subvolume
+
+    let subvol = Path::new("/local");
+    let tag = None;
+    let (snapshot, _gen) = find_most_recent_snapshot(&snapshots, subvol, tag)
+      .unwrap()
+      .unwrap();
+    assert_eq!(snapshot.subvol, Subvol::new(subvol));
+    assert_eq!(
+      snapshot.timestamp,
+      datetime!(2025-09-02 07:47:45).assume_offset(utc_offset())
+    );
+    assert_eq!(snapshot.tag, tag.unwrap_or_default());
+
+    let tag = Some("tag1");
+    let (snapshot, _gen) = find_most_recent_snapshot(&snapshots, subvol, tag)
+      .unwrap()
+      .unwrap();
+    assert_eq!(snapshot.subvol, Subvol::new(subvol));
+    assert_eq!(
+      snapshot.timestamp,
+      datetime!(2025-09-01 21:31:37).assume_offset(utc_offset())
+    );
+    assert_eq!(snapshot.tag, tag.unwrap_or_default());
   }
 
   /// Make sure that we ignore snapshots outside of a repository.
