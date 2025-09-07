@@ -51,8 +51,9 @@ fn collect_so_search_paths(ldso_conf: &Path, paths: &mut Vec<PathBuf>) -> Result
   let ldso = File::open(ldso_conf)
     .with_context(|| format!("failed to open {} for reading", ldso_conf.display()))?;
   let reader = BufReader::new(ldso);
-  for line in reader.lines() {
-    let line = line.context("failed to reader line from /etc/ld.so.conf")?;
+  for (nr, line) in reader.lines().enumerate() {
+    let line =
+      line.with_context(|| format!("failed to read line {nr} from `{}`", ldso_conf.display()))?;
     // Ignore comments.
     if line.starts_with('#') {
       continue
