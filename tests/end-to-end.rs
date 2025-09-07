@@ -508,6 +508,60 @@ fn backup_remote() {
   })
 }
 
+/// Make sure that we can backup a btrfs subvolume after manually
+/// restoring it from a previously taken snapshot.
+#[test]
+#[serial]
+fn backup_after_manual_restore() {
+  with_two_btrfs(|src_root, dst_root| {
+    let btrfs = Btrfs::new();
+
+    let snapshots = src_root.join("snapshots");
+    let subvol = src_root.join("subvol");
+    let () = create_dir_all(&snapshots).unwrap();
+    let () = btrfs.create_subvol(&subvol).unwrap();
+    let file = subvol.join("file");
+    let () = write(&file, "test").unwrap();
+
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("backup"),
+      subvol.as_os_str(),
+      OsStr::new("--source"),
+      snapshots.as_os_str(),
+      OsStr::new("--destination"),
+      dst_root.as_os_str(),
+      OsStr::new("--trace"),
+    ];
+    let () = run(args).unwrap();
+
+    let snapshot = snapshots
+      .read_dir()
+      .unwrap()
+      .next()
+      .unwrap()
+      .unwrap()
+      .path();
+
+    // Create another file and do another backup.
+    let unwanted = subvol.join("unwanted");
+    let () = write(&unwanted, "test2").unwrap();
+    let () = run(args).unwrap();
+    assert!(unwanted.exists());
+
+    // Now manually restore the first snapshot.
+    let () = btrfs.delete_subvol(&subvol).unwrap();
+    let readonly = false;
+    let () = btrfs.snapshot(&snapshot, &subvol, readonly).unwrap();
+    assert!(!unwanted.exists());
+    assert!(file.exists());
+
+    // Pull another backup with some new additions.
+    let () = write(subvol.join("file2"), "test2").unwrap();
+    let () = run(args).unwrap();
+  })
+}
+
 /// Check that we can purge old snapshots as expected.
 #[test]
 #[serial]

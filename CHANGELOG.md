@@ -1,3 +1,9 @@
+Unreleased
+----------
+- Fixed potential backup issues for subvolumes previously restored from
+  a snapshot
+
+
 0.2.3
 -----
 - Added statically linked builds for `arm-unknown-linux-musleabi` and
