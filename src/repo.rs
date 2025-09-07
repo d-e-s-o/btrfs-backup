@@ -118,19 +118,19 @@ fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot) -> Result<()> {
     .filter(|snapshot| snapshot.as_base_name() == base_name)
     .collect::<BTreeSet<_>>();
 
-  // Find all candidate parent snapshots, which is basically nothing
+  // Find all candidate source snapshots, which is basically nothing
   // more than the set of snapshots of the provided subvolume available
   // in both repositories.
-  let parents = src_snaps
+  let sources = src_snaps
     .intersection(&dst_snaps)
     .map(|snapshot| src.path().join(snapshot.to_string()))
     .collect::<Vec<_>>();
-  let parents = parents.iter().map(OsStr::new);
+  let sources = sources.iter().map(OsStr::new);
 
   let () = src.btrfs.sync(&src.btrfs_root)?;
   let () = src.btrfs.send_recv(
     &src.path().join(src_snap.to_string()),
-    parents,
+    sources,
     &dst.btrfs,
     &dst.path(),
   )?;

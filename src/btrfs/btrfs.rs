@@ -357,7 +357,7 @@ impl Btrfs {
   pub fn send_recv<'input, I>(
     &self,
     send_subvolume: &'input Path,
-    send_parents: I,
+    send_sources: I,
     recv: &Btrfs,
     recv_destination: &Path,
   ) -> Result<()>
@@ -367,7 +367,7 @@ impl Btrfs {
     I: IntoIterator<Item = &'input OsStr>,
     I::IntoIter: Clone,
   {
-    let src_args = commands::serialize(send_subvolume, send_parents);
+    let src_args = commands::serialize(send_subvolume, send_sources);
     let (src_cmd, src_args) = self.command(src_args);
     let dst_args = commands::deserialize(recv_destination);
     let (dst_cmd, dst_args) = recv.command(dst_args);

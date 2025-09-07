@@ -65,7 +65,7 @@ pub fn sync(
 /// Retrieve the command to serialize a btrfs subvolume into a byte stream.
 pub fn serialize<'input, I>(
   subvol: &'input Path,
-  parents: I,
+  sources: I,
 ) -> impl IntoIterator<Item = &'input OsStr, IntoIter = impl Iterator<Item = &'input OsStr> + Clone>
      + Clone
 where
@@ -88,9 +88,9 @@ where
   // resulting subvolume. Since the clone-source option implies the
   // parent option, it also instructs the command to send only the
   // incremental data (to the latest snapshot).
-  let options = parents
+  let options = sources
     .into_iter()
-    .flat_map(|parent| ["-c".as_ref(), parent]);
+    .flat_map(|source| ["-c".as_ref(), source]);
 
   ["send".as_ref()]
     .into_iter()
@@ -267,8 +267,8 @@ mod tests {
     assert_eq!(command, "filesystem sync some-filesystem");
 
     let subvol = Path::new("a-sub-volume");
-    let parents = [];
-    let command = stringify(serialize(subvol, parents));
+    let sources = [];
+    let command = stringify(serialize(subvol, sources));
     assert_eq!(command, "send a-sub-volume");
 
     let dst = Path::new("destination-volume");
