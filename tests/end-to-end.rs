@@ -183,6 +183,15 @@ fn collect_deps(bin: PathBuf, deps: &mut HashMap<PathBuf, Vec<PathBuf>>) -> Resu
 
   let elf = elf::Elf::parse(&mmap)
     .with_context(|| format!("failed to parse ELF file `{}`", bin.display()))?;
+
+  collect_deps_elf(bin, elf, deps)
+}
+
+fn collect_deps_elf(
+  bin: PathBuf,
+  elf: elf::Elf,
+  deps: &mut HashMap<PathBuf, Vec<PathBuf>>,
+) -> Result<()> {
   let mut libs = elf
     .libraries
     .iter()
