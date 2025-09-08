@@ -141,7 +141,7 @@ fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot) -> Result<()> {
 
 /// Backup a subvolume from a source repository to a destination.
 pub fn backup(src: &Repo, dst: &Repo, subvol: &Path, tag: &str) -> Result<Snapshot> {
-  let src_snap = src.snapshot(subvol, tag)?;
+  let (src_snap, _parent) = src.snapshot(subvol, tag)?;
   let () = deploy(src, dst, &src_snap)?;
   Ok(src_snap)
 }
@@ -323,9 +323,10 @@ impl Repo {
 
   /// Create a snapshot of the given subvolume in this repository.
   ///
-  /// If an up-to-date snapshot is present already, just return it
-  /// directly.
-  pub fn snapshot(&self, subvol: &Path, tag: &str) -> Result<Snapshot> {
+  /// This method returns the new created snapshot as well as its
+  /// parent, if any. If an up-to-date snapshot is present already, it
+  /// is just returned it directly. In this case no parent is reported.
+  pub fn snapshot(&self, subvol: &Path, tag: &str) -> Result<(Snapshot, Option<Snapshot>)> {
     let snapshots = self.snapshots()?;
     // When searching for the most recent snapshot in this context we
     // are looking for one with not just any but this specific tag.
@@ -334,7 +335,7 @@ impl Repo {
     let most_recent = if let Some((snapshot, generation)) = most_recent {
       let has_changes = self.btrfs.has_changes(subvol, *generation)?;
       if !has_changes {
-        return Ok(snapshot.clone())
+        return Ok((snapshot.clone(), None))
       }
       Some(snapshot)
     } else {
@@ -360,7 +361,7 @@ impl Repo {
     let readonly = true;
     let snapshot_path = self.path().join(snapshot.to_string());
     let () = self.btrfs.snapshot(subvol, &snapshot_path, readonly)?;
-    Ok(snapshot)
+    Ok((snapshot, most_recent.cloned()))
   }
 
   /// Delete the provided snapshot from the repository.
@@ -451,7 +452,7 @@ mod tests {
 
       let repo = Repo::new(root.join("repo")).unwrap();
 
-      let snapshot = repo.snapshot(&subvol, tag).unwrap();
+      let (snapshot, _parent) = repo.snapshot(&subvol, tag).unwrap();
       let content = read_to_string(repo.path().join(snapshot.to_string()).join("file")).unwrap();
       assert_eq!(content, "test42");
     })
@@ -471,7 +472,7 @@ mod tests {
 
       let repo = Repo::new(root.join("repo")).unwrap();
 
-      let snapshot = repo.snapshot(&subvol, tag).unwrap();
+      let (snapshot, _parent) = repo.snapshot(&subvol, tag).unwrap();
       assert_eq!(snapshot.tag, tag);
 
       let content = read_to_string(repo.path().join(snapshot.to_string()).join("file")).unwrap();
@@ -494,8 +495,8 @@ mod tests {
 
       let repo = Repo::new(root).unwrap();
 
-      let snapshot1 = repo.snapshot(&subvol, tag).unwrap();
-      let snapshot2 = repo.snapshot(&subvol, tag).unwrap();
+      let (snapshot1, _parent) = repo.snapshot(&subvol, tag).unwrap();
+      let (snapshot2, _parent) = repo.snapshot(&subvol, tag).unwrap();
       assert_eq!(snapshot1, snapshot2);
 
       let snapshots = repo.snapshots().unwrap();
@@ -517,9 +518,9 @@ mod tests {
       let repo = Repo::new(root).unwrap();
 
       let tag = "";
-      let snapshot1 = repo.snapshot(&subvol, tag).unwrap();
+      let (snapshot1, _parent) = repo.snapshot(&subvol, tag).unwrap();
       let tag = "different";
-      let snapshot2 = repo.snapshot(&subvol, tag).unwrap();
+      let (snapshot2, _parent) = repo.snapshot(&subvol, tag).unwrap();
       assert_ne!(snapshot1, snapshot2);
 
       let snapshots = repo.snapshots().unwrap();
@@ -542,9 +543,9 @@ mod tests {
 
       let repo = Repo::new(root).unwrap();
 
-      let snapshot1 = repo.snapshot(&subvol, tag).unwrap();
+      let (snapshot1, _parent) = repo.snapshot(&subvol, tag).unwrap();
       let () = write(subvol.join("file"), "test43").unwrap();
-      let snapshot2 = repo.snapshot(&subvol, tag).unwrap();
+      let (snapshot2, _parent) = repo.snapshot(&subvol, tag).unwrap();
       assert_ne!(snapshot1, snapshot2);
 
       let snapshots = repo.snapshots().unwrap();
@@ -583,7 +584,7 @@ mod tests {
 
       let repo = Repo::new(root.join("repo")).unwrap();
 
-      let snapshot = repo.snapshot(&subvol, tag).unwrap();
+      let (snapshot, _parent) = repo.snapshot(&subvol, tag).unwrap();
       let mut snapshots = repo.snapshots().unwrap().into_iter();
       assert_eq!(snapshots.len(), 1);
 
