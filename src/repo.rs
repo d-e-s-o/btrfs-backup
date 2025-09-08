@@ -635,6 +635,17 @@ mod tests {
     );
     assert_eq!(snapshot.tag, "tag1");
 
+    let tag = Some("");
+    let (snapshot, _gen) = find_most_recent_snapshot(&snapshots, subvol, tag)
+      .unwrap()
+      .unwrap();
+    assert_eq!(snapshot.subvol, Subvol::new(subvol));
+    assert_eq!(
+      snapshot.timestamp,
+      datetime!(2023-03-21 22:20:23).assume_offset(utc_offset())
+    );
+    assert_eq!(snapshot.tag, tag.unwrap_or_default());
+
     let tag = Some("tag2");
     let (snapshot, _gen) = find_most_recent_snapshot(&snapshots, subvol, tag)
       .unwrap()
@@ -659,6 +670,10 @@ mod tests {
       datetime!(2025-09-02 07:47:45).assume_offset(utc_offset())
     );
     assert_eq!(snapshot.tag, tag.unwrap_or_default());
+
+    let tag = Some("tag2");
+    let result = find_most_recent_snapshot(&snapshots, subvol, tag).unwrap();
+    assert_eq!(result, None);
 
     let tag = Some("tag1");
     let (snapshot, _gen) = find_most_recent_snapshot(&snapshots, subvol, tag)
