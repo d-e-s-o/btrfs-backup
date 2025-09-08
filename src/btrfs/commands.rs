@@ -65,6 +65,7 @@ pub fn sync(
 /// Retrieve the command to serialize a btrfs subvolume into a byte stream.
 pub fn serialize<'input, I>(
   subvol: &'input Path,
+  parent: Option<&'input Path>,
   sources: I,
 ) -> impl IntoIterator<Item = &'input OsStr, IntoIter = impl Iterator<Item = &'input OsStr> + Clone>
      + Clone
@@ -74,26 +75,32 @@ where
   I: IntoIterator<Item = &'input OsStr>,
   I::IntoIter: Clone,
 {
-  // We only use the clone-source (-c) option here and not the
-  // parent (-p) one because we can specify multiple clone sources
-  // (the parameter is allowed multiple times) whereas we must only
-  // specify one parent. In any case, if the -c option is given the
-  // btrfs command will figure out the parent to use by itself.
+  // If available, we explicitly provide a parent (-p) on top of the
+  // various clone sources (-c). This is done so that we do not have to
+  // rely on btrfs' parent discovery logic (which kicks in when only
+  // clone sources are provided but no parent). Said logic can fail to
+  // determine a parent in various not-too-contrived scenarios, which
+  // would cause the send to fail.
   //
   // In general, the clone-source option specifies that data from a
   // given snapshot (that has to be available on both the source and
   // the destination) is used when constructing back the subvolume
   // from the byte stream. This additional information can be used
   // to achieve better sharing of internally used data in the
-  // resulting subvolume. Since the clone-source option implies the
-  // parent option, it also instructs the command to send only the
-  // incremental data (to the latest snapshot).
+  // resulting subvolume and aids with sending only incremental
+  // differences from previous snapshots.
   let options = sources
     .into_iter()
     .flat_map(|source| ["-c".as_ref(), source]);
 
   ["send".as_ref()]
     .into_iter()
+    .chain(
+      parent
+        .map(|parent| ["-p".as_ref(), parent.as_os_str()])
+        .into_iter()
+        .flatten(),
+    )
     .chain(options)
     .chain([subvol.as_os_str()])
 }
@@ -267,9 +274,14 @@ mod tests {
     assert_eq!(command, "filesystem sync some-filesystem");
 
     let subvol = Path::new("a-sub-volume");
+    let parent = None;
     let sources = [];
-    let command = stringify(serialize(subvol, sources));
+    let command = stringify(serialize(subvol, parent, sources));
     assert_eq!(command, "send a-sub-volume");
+
+    let parent = Some(Path::new("/foobar"));
+    let command = stringify(serialize(subvol, parent, sources));
+    assert_eq!(command, "send -p /foobar a-sub-volume");
 
     let dst = Path::new("destination-volume");
     let command = stringify(deserialize(dst));

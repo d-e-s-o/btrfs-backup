@@ -357,6 +357,7 @@ impl Btrfs {
   pub fn send_recv<'input, I>(
     &self,
     send_subvolume: &'input Path,
+    parent: Option<&'input Path>,
     send_sources: I,
     recv: &Btrfs,
     recv_destination: &Path,
@@ -367,7 +368,7 @@ impl Btrfs {
     I: IntoIterator<Item = &'input OsStr>,
     I::IntoIter: Clone,
   {
-    let src_args = commands::serialize(send_subvolume, send_sources);
+    let src_args = commands::serialize(send_subvolume, parent, send_sources);
     let (src_cmd, src_args) = self.command(src_args);
     let dst_args = commands::deserialize(recv_destination);
     let (dst_cmd, dst_args) = recv.command(dst_args);
@@ -605,7 +606,7 @@ mod tests {
     let () = btrfs.snapshot(&subvol, &snapshot, readonly).unwrap();
 
     let () = btrfs
-      .send_recv(&snapshot, [], &btrfs, mount2.path())
+      .send_recv(&snapshot, None, [], &btrfs, mount2.path())
       .unwrap();
     assert!(mount2.path().join("snapshot").exists());
   }

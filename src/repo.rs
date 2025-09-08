@@ -92,7 +92,7 @@ fn find_most_recent_snapshot<'snaps>(
 
 
 /// "Deploy" a snapshot in a source repository to a destination.
-fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot) -> Result<()> {
+fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot, parent: Option<&Snapshot>) -> Result<()> {
   let base_name = src_snap.as_base_name();
   let dst_snaps = dst
     .snapshots()?
@@ -130,6 +130,10 @@ fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot) -> Result<()> {
   let () = src.btrfs.sync(&src.btrfs_root)?;
   let () = src.btrfs.send_recv(
     &src.path().join(src_snap.to_string()),
+    parent
+      .map(Snapshot::to_string)
+      .map(|parent| src.path().join(parent))
+      .as_deref(),
     sources,
     &dst.btrfs,
     &dst.path(),
@@ -141,8 +145,8 @@ fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot) -> Result<()> {
 
 /// Backup a subvolume from a source repository to a destination.
 pub fn backup(src: &Repo, dst: &Repo, subvol: &Path, tag: &str) -> Result<Snapshot> {
-  let (src_snap, _parent) = src.snapshot(subvol, tag)?;
-  let () = deploy(src, dst, &src_snap)?;
+  let (src_snap, parent) = src.snapshot(subvol, tag)?;
+  let () = deploy(src, dst, &src_snap, parent.as_ref())?;
   Ok(src_snap)
 }
 
@@ -186,7 +190,7 @@ pub fn restore(src: &Repo, dst: &Repo, subvol: &Path, snapshot_only: bool) -> Re
 
   // Restoration of a subvolume involves a subset of the steps we do
   // when we pull a backup: the deployment.
-  let () = deploy(src, dst, snapshot)?;
+  let () = deploy(src, dst, snapshot, None)?;
 
   if !snapshot_only {
     // Now that we got the snapshot back on the destination repository,
