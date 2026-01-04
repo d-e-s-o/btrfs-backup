@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2026 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::path::PathBuf;
@@ -69,8 +69,7 @@ pub struct RemoteCommand {
   /// Note that this command may contain arguments separated by spaces.
   /// It is not currently possible to reference an executable that
   /// contains a space in its name.
-  #[clap(long)]
-  #[arg(value_parser = parse_command)]
+  #[clap(long, value_parser = parse_command)]
   pub remote_command: Option<(String, Vec<String>)>,
 }
 
@@ -171,8 +170,7 @@ pub struct Purge {
   ///
   /// Please note that as a precaution, the most recent snapshot of a
   /// subvolume is never deleted.
-  #[clap(long)]
-  #[arg(value_parser = parse_duration)]
+  #[clap(long, value_parser = parse_duration)]
   pub keep_for: Duration,
 }
 
