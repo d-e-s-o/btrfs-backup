@@ -1,5 +1,5 @@
-Unreleased
-----------
+0.2.4
+-----
 - Fixed potential backup issues for subvolumes previously restored from
   a snapshot
 
