@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2026 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #![allow(clippy::unwrap_used)]
@@ -492,6 +492,8 @@ fn backup_remote() {
 
       let subvol = src_root.join("subvol");
       let () = btrfs.create_subvol(&subvol).unwrap();
+      let file = subvol.join("file");
+      let () = write(&file, "test12345").unwrap();
 
       let remote_cmd = format!("chroot {} /bin/sh-run", dst_root.display());
       let args = [
@@ -504,6 +506,17 @@ fn backup_remote() {
         OsStr::new(&remote_cmd),
       ];
       let () = run(args).unwrap();
+
+      let dst_subvol = dst_root.join("backups");
+      let snapshot = dst_subvol
+        .read_dir()
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+      let content = read_to_string(snapshot.join("file")).unwrap();
+      assert_eq!(content, "test12345");
     })
   })
 }
