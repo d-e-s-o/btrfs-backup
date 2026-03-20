@@ -575,6 +575,71 @@ fn backup_after_manual_restore() {
   })
 }
 
+/// Check backup behavior when a snapshot no longer exists on the remote.
+#[test]
+#[serial]
+fn backup_no_snapshot_on_remote() {
+  with_btrfs(|src_root| {
+    with_btrfs_chroot(|dst_root| {
+      let btrfs = Btrfs::new();
+
+      let subvol = src_root.join("subvol");
+      let () = btrfs.create_subvol(&subvol).unwrap();
+      let file = subvol.join("file");
+      let () = write(&file, "test543").unwrap();
+
+      let remote_cmd = format!("chroot {} /bin/sh-run", dst_root.display());
+      let args = [
+        OsStr::new("btrfs-backup"),
+        OsStr::new("backup"),
+        subvol.as_os_str(),
+        OsStr::new("--destination"),
+        OsStr::new("/backups"),
+        OsStr::new("--remote-command"),
+        OsStr::new(&remote_cmd),
+      ];
+      let () = run(args).unwrap();
+
+      // Change file content and backup again.
+      let () = write(&file, "test54321").unwrap();
+      let () = run(args).unwrap();
+
+      let dst_subvol = dst_root.join("backups");
+      let mut snapshots = dst_subvol
+        .read_dir()
+        .unwrap()
+        .map(|result| result.unwrap().path())
+        .collect::<Vec<PathBuf>>();
+      let () = snapshots.sort();
+      assert_eq!(snapshots.len(), 2);
+
+      let content = read_to_string(snapshots[0].join("file")).unwrap();
+      assert_eq!(content, "test543");
+      let content = read_to_string(snapshots[1].join("file")).unwrap();
+      assert_eq!(content, "test54321");
+
+      // Remove the later of the two snapshots, meaning that our source
+      // now has a snapshot that is more recent than what the remote
+      // actually has.
+      let () = btrfs.delete_subvol(&snapshots[1]).unwrap();
+
+      let () = run(args).unwrap();
+
+      let dst_subvol = dst_root.join("backups");
+      let mut snapshots = dst_subvol
+        .read_dir()
+        .unwrap()
+        .map(|result| result.unwrap().path())
+        .collect::<Vec<PathBuf>>();
+      let () = snapshots.sort();
+      assert_eq!(snapshots.len(), 2);
+
+      let content = read_to_string(snapshots[1].join("file")).unwrap();
+      assert_eq!(content, "test54321");
+    })
+  })
+}
+
 /// Check that we can purge old snapshots as expected.
 #[test]
 #[serial]
