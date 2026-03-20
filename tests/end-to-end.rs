@@ -544,7 +544,6 @@ fn backup_after_manual_restore() {
       snapshots.as_os_str(),
       OsStr::new("--destination"),
       dst_root.as_os_str(),
-      OsStr::new("--trace"),
     ];
     let () = run(args).unwrap();
 
