@@ -354,6 +354,30 @@ where
 }
 
 
+/// Check that the program reports a somewhat sensible error message
+/// when backing up a non-existent subvolume.
+#[test]
+#[serial]
+fn backup_repo_not_found() {
+  with_two_btrfs(|src_root, dst_root| {
+    let subvol = src_root.join("does-not-exist");
+    assert_eq!(dst_root.read_dir().unwrap().count(), 0);
+
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("backup"),
+      subvol.as_os_str(),
+      OsStr::new("--destination"),
+      dst_root.as_os_str(),
+    ];
+    let err = run(args).unwrap_err().to_string();
+    assert!(
+      err.contains("failed to canonicalize subvolume path"),
+      "{err}"
+    );
+  })
+}
+
 /// Test that we can backup subvolumes with co-located snapshot
 /// repositories.
 #[test]
@@ -427,7 +451,7 @@ fn backup_with_distinct_repo() {
   })
 }
 
-/// Check that subvolume paths are canocicalized for backup.
+/// Check that subvolume paths are canonicalized for backup.
 #[test]
 #[serial]
 fn backup_subvolume_canonicalized() {
