@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2025 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2026 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A program for backup & restoration of btrfs subvolumes.
@@ -120,7 +120,12 @@ fn backup(backup: Backup) -> Result<()> {
   } = backup;
 
   let () = subvolumes.iter_mut().try_for_each(|subvol| {
-    *subvol = canonicalize(&*subvol)?;
+    *subvol = canonicalize(&*subvol).with_context(|| {
+      format!(
+        "failed to canonicalize subvolume path `{}`",
+        subvol.display()
+      )
+    })?;
     Result::<(), Error>::Ok(())
   })?;
 
