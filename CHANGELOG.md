@@ -1,5 +1,5 @@
-Unreleased
-----------
+0.2.5
+-----
 - Improved error message when backing up non-existent subvolume
 
 
