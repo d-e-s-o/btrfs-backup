@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2026 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::borrow::Cow;
@@ -17,12 +17,12 @@ use anyhow::ensure;
 use anyhow::Context as _;
 use anyhow::Result;
 
+use time::format_description::modifier::CalendarYearFullStandardRange;
 use time::format_description::modifier::Day;
-use time::format_description::modifier::Hour;
+use time::format_description::modifier::Hour24;
 use time::format_description::modifier::Minute;
-use time::format_description::modifier::Month;
+use time::format_description::modifier::MonthNumerical;
 use time::format_description::modifier::Second;
-use time::format_description::modifier::Year;
 use time::format_description::Component;
 use time::format_description::FormatItem;
 use time::Date;
@@ -56,19 +56,21 @@ static UTC_OFFSET: LazyLock<UtcOffset> = LazyLock::new(|| {
 
 /// The date format used in snapshot names.
 const DATE_FORMAT: [FormatItem<'static>; 5] = [
-  FormatItem::Component(Component::Year(Year::default())),
-  FormatItem::Literal(ENCODED_INTRA_COMPONENT_SEPARATOR.as_bytes()),
-  FormatItem::Component(Component::Month(Month::default())),
-  FormatItem::Literal(ENCODED_INTRA_COMPONENT_SEPARATOR.as_bytes()),
+  FormatItem::Component(Component::CalendarYearFullStandardRange(
+    CalendarYearFullStandardRange::default(),
+  )),
+  FormatItem::StringLiteral(ENCODED_INTRA_COMPONENT_SEPARATOR),
+  FormatItem::Component(Component::MonthNumerical(MonthNumerical::default())),
+  FormatItem::StringLiteral(ENCODED_INTRA_COMPONENT_SEPARATOR),
   FormatItem::Component(Component::Day(Day::default())),
 ];
 
 /// The time format used in snapshot names.
 const TIME_FORMAT: [FormatItem<'static>; 5] = [
-  FormatItem::Component(Component::Hour(Hour::default())),
-  FormatItem::Literal(b":"),
+  FormatItem::Component(Component::Hour24(Hour24::default())),
+  FormatItem::StringLiteral(":"),
   FormatItem::Component(Component::Minute(Minute::default())),
-  FormatItem::Literal(b":"),
+  FormatItem::StringLiteral(":"),
   FormatItem::Component(Component::Second(Second::default())),
 ];
 
