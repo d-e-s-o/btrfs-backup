@@ -381,7 +381,16 @@ mod tests {
 
   use std::cmp::Ordering;
 
+  use quickcheck::Arbitrary;
+  use quickcheck::Gen;
+  use quickcheck::QuickCheck;
+  use quickcheck::TestResult;
+
+  use time::Date;
   use time::Month;
+  use time::OffsetDateTime;
+  use time::Time;
+  use time::UtcOffset;
 
 
   /// Check that trailing path separators are handled properly.
@@ -471,5 +480,72 @@ mod tests {
     test(Path::new("/snapshots/xxx_yyy"));
     test(Path::new("/snapshots/xxx/yyy"));
     test(Path::new("/snapshots/xxx-yyy"));
+  }
+
+
+  #[derive(Clone, Debug)]
+  struct Timestamp {
+    year: i32,
+    month: Month,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    offset_hour: i8,
+    offset_minute: i8,
+  }
+
+  impl Arbitrary for Timestamp {
+    fn arbitrary(g: &mut Gen) -> Self {
+      let year = 1000 + u16::arbitrary(g) % 9000;
+      let month = Month::try_from(1 + u8::arbitrary(g) % 12).unwrap();
+      let day = 1 + u8::arbitrary(g) % month.length(year as i32);
+
+      Self {
+        year: year as i32,
+        month,
+        day,
+        hour: u8::arbitrary(g) % 24,
+        minute: u8::arbitrary(g) % 60,
+        second: u8::arbitrary(g) % 60,
+        offset_hour: i8::arbitrary(g) % 24,
+        offset_minute: i8::arbitrary(g) % 60,
+      }
+    }
+  }
+
+  impl Timestamp {
+    fn into_offset_date_time(self) -> OffsetDateTime {
+      let date = Date::from_calendar_date(self.year, self.month, self.day).unwrap();
+      let time = Time::from_hms(self.hour, self.minute, self.second).unwrap();
+      let offset = UtcOffset::from_hms(self.offset_hour, self.offset_minute, 0).unwrap();
+
+      date.with_time(time).assume_offset(offset)
+    }
+  }
+
+  /// Check that variable [`Snapshot::timestamp`] values keep overall
+  /// formatted [`Snapshot`] string length constant.
+  #[test]
+  fn snapshot_display_length() {
+    fn property(timestamp: Timestamp) -> TestResult {
+      let mut snapshot = Snapshot::builder()
+        .try_build(Path::new("/tmp/foobar"))
+        .unwrap();
+
+      let before = snapshot.to_string();
+      snapshot.timestamp = timestamp.into_offset_date_time();
+      let after = snapshot.to_string();
+
+      if before.len() == after.len() {
+        TestResult::passed()
+      } else {
+        TestResult::error(format!("display length changed: {before} -> {after}"))
+      }
+    }
+
+    QuickCheck::new()
+      .tests(1000)
+      .quickcheck(property as fn(_) -> _);
   }
 }

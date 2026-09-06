@@ -58,6 +58,7 @@ btrfs-backup = { path = ".", features = ["test"] }
 glob = "0.3.1"
 goblin = "0.10.0"
 memmap = "0.7.0"
+quickcheck = "1"
 serial_test = "4.0.1"
 tempfile = "3.3.0"
 time-macros = "0.2.24"
