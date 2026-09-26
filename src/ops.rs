@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2024 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2023-2026 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::ffi::OsStr;
@@ -9,11 +9,10 @@ use std::fs::create_dir_all;
 use std::fs::metadata;
 use std::io::ErrorKind;
 use std::iter;
+use std::os::unix::ffi::OsStringExt as _;
 use std::path::Path;
 use std::path::PathBuf;
-use std::str;
 
-use anyhow::Context as _;
 use anyhow::Result;
 
 use crate::util::check;
@@ -126,6 +125,17 @@ impl RemoteOps {
   }
 }
 
+
+fn trim_trailing_whitespace(bytes: &mut Vec<u8>) {
+  let len = bytes
+    .iter()
+    .rposition(|b| !b.is_ascii_whitespace())
+    .map_or(0, |i| i + 1);
+
+  bytes.truncate(len);
+}
+
+
 // Note: we use short options here because there is a belief that they
 //       are more widely supported. busybox or other providers of
 //       similar functionality may not support `mkdir --parents`, for
@@ -143,15 +153,10 @@ impl FileOps for RemoteOps {
 
   fn canonicalize(&self, path: &Path) -> Result<PathBuf> {
     let (command, args) = self.command("readlink", ["-e".as_ref(), path.as_os_str()]);
-    let output = output(command, args)?;
-    // TODO: We *shouldn't* have to go through a `String` here, as it
-    //       may impose more restrictions than `Path` does, but trimming
-    //       the trailing newline is not so easily possible if we don't.
-    let path = str::from_utf8(&output)
-      .context("failed to read `readlink -e` output as UTF-8 string")?
-      .trim_end()
-      .to_string();
-    Ok(PathBuf::from(path))
+    let mut output = output(command, args)?;
+    // Make sure to remove trailing newline.
+    let () = trim_trailing_whitespace(&mut output);
+    Ok(PathBuf::from(OsString::from_vec(output)))
   }
 }
 
@@ -163,6 +168,31 @@ mod tests {
   use std::os::unix::fs::symlink;
 
   use tempfile::TempDir;
+
+
+  /// Check that we can trim trailing whitespaces on a `Vec<u8>`.
+  #[test]
+  fn trailing_whitespace_trimming() {
+    let cases = [
+      (b"foo".as_slice(), b"foo".as_slice()),
+      (b"foo ".as_slice(), b"foo".as_slice()),
+      (b"foo\t".as_slice(), b"foo".as_slice()),
+      (b"foo\n".as_slice(), b"foo".as_slice()),
+      (b"foo\r\n\t ".as_slice(), b"foo".as_slice()),
+      (b"\tfoo".as_slice(), b"\tfoo".as_slice()),
+      (b" foo ".as_slice(), b" foo".as_slice()),
+      (b"   ".as_slice(), b"".as_slice()),
+      (b"".as_slice(), b"".as_slice()),
+      // Non-whitespace bytes should be preserved.
+      (b"foo\xff\t".as_slice(), b"foo\xff".as_slice()),
+    ];
+
+    for (input, expected) in cases {
+      let mut bytes = input.to_vec();
+      let () = trim_trailing_whitespace(&mut bytes);
+      assert_eq!(bytes, expected, "input: {input:?}");
+    }
+  }
 
 
   fn sh() -> PathBuf {
