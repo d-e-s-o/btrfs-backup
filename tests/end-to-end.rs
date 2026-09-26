@@ -451,6 +451,64 @@ fn backup_with_distinct_repo() {
   })
 }
 
+/// Check backup behavior when no snapshot exists on the destination anymore.
+#[test]
+#[serial]
+fn backup_only_intermediate_snapshot() {
+  with_two_btrfs(|src_root, dst_root| {
+    let btrfs = Btrfs::new();
+
+    let subvol = src_root.join("subvol");
+    let () = btrfs.create_subvol(&subvol).unwrap();
+    let file = subvol.join("file");
+    let () = write(&file, "test543").unwrap();
+
+    let snapshots = src_root.join("snapshots");
+    let backup = dst_root.join("backup");
+
+    let args = [
+      OsStr::new("btrfs-backup"),
+      OsStr::new("backup"),
+      subvol.as_os_str(),
+      OsStr::new("--trace"),
+      OsStr::new("--tag"),
+      OsStr::new("xxx"),
+      OsStr::new("--source"),
+      snapshots.as_os_str(),
+      OsStr::new("--destination"),
+      backup.as_os_str(),
+    ];
+    let () = run(args).unwrap();
+
+    let backups = backup
+      .read_dir()
+      .unwrap()
+      .map(|result| result.unwrap().path())
+      .collect::<Vec<PathBuf>>();
+    assert_eq!(backups.len(), 1);
+
+    let content = read_to_string(backups[0].join("file")).unwrap();
+    assert_eq!(content, "test543");
+
+    // Remove the snapshot from the destination.
+    let () = btrfs.delete_subvol(&backups[0]).unwrap();
+    // Change file content and backup again.
+    let () = write(&file, "test54321").unwrap();
+
+    let () = run(args).unwrap();
+
+    let backups = backup
+      .read_dir()
+      .unwrap()
+      .map(|result| result.unwrap().path())
+      .collect::<Vec<PathBuf>>();
+    assert_eq!(backups.len(), 1);
+
+    let content = read_to_string(backups[0].join("file")).unwrap();
+    assert_eq!(content, "test54321");
+  })
+}
+
 /// Check that subvolume paths are canonicalized for backup.
 #[test]
 #[serial]
