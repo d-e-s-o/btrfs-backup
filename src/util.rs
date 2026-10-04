@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2025 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2026 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::borrow::Cow;
@@ -11,6 +11,7 @@ use std::fs::canonicalize;
 use std::io;
 use std::io::ErrorKind;
 use std::os::unix::ffi::OsStrExt as _;
+use std::os::unix::process::ExitStatusExt as _;
 use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
@@ -261,6 +262,8 @@ where
   if !output.status.success() {
     let code = if let Some(code) = output.status.code() {
       format!(" ({code})")
+    } else if let Some(signal) = output.status.signal() {
+      format!(" (signal {signal})")
     } else {
       " (terminated by signal)".to_string()
     };
