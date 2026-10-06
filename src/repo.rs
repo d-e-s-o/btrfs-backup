@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2025 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2026 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::BTreeSet;
@@ -92,7 +92,12 @@ fn find_most_recent_snapshot<'snaps>(
 
 
 /// "Deploy" a snapshot in a source repository to a destination.
-fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot, parent: Option<&Snapshot>) -> Result<()> {
+fn deploy(
+  src: &Repo,
+  dst: &Repo,
+  src_snap: &Snapshot,
+  mut parent: Option<&Snapshot>,
+) -> Result<()> {
   let base_name = src_snap.as_base_name();
   let dst_snaps = dst
     .snapshots()?
@@ -106,6 +111,18 @@ fn deploy(src: &Repo, dst: &Repo, src_snap: &Snapshot, parent: Option<&Snapshot>
   // actually create a new snapshot to begin with.
   if dst_snaps.contains(src_snap) {
     return Ok(())
+  }
+
+  if let Some(p) = parent {
+    // The parent has to exist not just on `src` but on `dst` as well in
+    // order to be usable. If it isn't, we are forced to do a
+    // non-incremental backup.
+    // TODO: Ideally we'd just treat whatever is the most recent common
+    //       snapshot as parent, but that requires a larger rework for
+    //       what seems like a pathological case.
+    if !dst_snaps.contains(p) {
+      parent = None;
+    }
   }
 
   // TODO: The `src.snapshot` invocation above already retrieves the
@@ -329,7 +346,7 @@ impl Repo {
   ///
   /// This method returns the new created snapshot as well as its
   /// parent, if any. If an up-to-date snapshot is present already, it
-  /// is just returned it directly. In this case no parent is reported.
+  /// is just returned directly. In this case no parent is reported.
   pub fn snapshot(&self, subvol: &Path, tag: &str) -> Result<(Snapshot, Option<Snapshot>)> {
     let snapshots = self.snapshots()?;
     // When searching for the most recent snapshot in this context we

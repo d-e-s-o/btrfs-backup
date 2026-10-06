@@ -1,3 +1,9 @@
+Unreleased
+----------
+- Fixed backup error when determined "parent" snapshot is present in
+  source but not on destination
+
+
 0.2.5
 -----
 - Improved error message when backing up non-existent subvolume
