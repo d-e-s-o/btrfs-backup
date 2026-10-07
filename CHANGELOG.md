@@ -1,5 +1,5 @@
-Unreleased
-----------
+0.2.6
+-----
 - Fixed backup error when determined "parent" snapshot is present in
   source but not on destination
 
