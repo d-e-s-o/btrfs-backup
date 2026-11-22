@@ -21,6 +21,7 @@ use std::io::BufRead as _;
 use std::io::BufReader;
 use std::io::Cursor;
 use std::io::ErrorKind;
+use std::io::Write as _;
 use std::os::unix::fs::symlink;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
@@ -43,6 +44,7 @@ use btrfs_backup::run;
 use btrfs_backup::snapshot::Snapshot;
 use btrfs_backup::test::with_btrfs;
 use btrfs_backup::test::with_two_btrfs;
+use btrfs_backup::test::BtrfsDev;
 use btrfs_backup::test::Mount;
 use btrfs_backup::util::normalize;
 
@@ -505,6 +507,50 @@ fn backup_missing_parent_on_destination() {
     let content = read_to_string(backups[0].join("file")).unwrap();
     assert_eq!(content, "test54321");
   })
+}
+
+
+/// Test that a backup failure caused by disk space exhaustion is
+/// reported as such.
+#[test]
+#[serial]
+fn backup_no_space_error_reporting() {
+  // A source with room for the payload and a destination far too small
+  // to ever hold it.
+  let payload_size = 2 * BtrfsDev::DEFAULT_SIZE;
+
+  let src_dev = BtrfsDev::new(2 * payload_size).unwrap();
+  let src_mount = Mount::new(src_dev.path()).unwrap();
+  let src_root = src_mount.path();
+
+  let dst_dev = BtrfsDev::with_default().unwrap();
+  let dst_mount = Mount::new(dst_dev.path()).unwrap();
+  let dst_root = dst_mount.path();
+
+  let btrfs = Btrfs::new();
+  let subvol = src_root.join("subvol");
+  let () = btrfs.create_subvol(&subvol).unwrap();
+
+  let chunk = vec![0u8; 1024 * 1024];
+  let mut file = File::create(subvol.join("payload")).unwrap();
+  for _ in 0..payload_size / chunk.len() {
+    let () = file.write_all(&chunk).unwrap();
+  }
+  // Make sure the data made it into the file system, so that the
+  // snapshot taken from here on really does hold the payload.
+  let () = file.sync_all().unwrap();
+
+  let args = [
+    OsStr::new("btrfs-backup"),
+    OsStr::new("backup"),
+    subvol.as_os_str(),
+    OsStr::new("--destination"),
+    dst_root.as_os_str(),
+  ];
+
+  let err = run(args).unwrap_err();
+  let report = format!("{err:?}");
+  assert!(report.contains("No space left"), "{report}");
 }
 
 /// Check that subvolume paths are canonicalized for backup.

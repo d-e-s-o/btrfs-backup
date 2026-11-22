@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2025 Daniel Mueller <deso@posteo.net>
+// Copyright (C) 2022-2026 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Test-only utility functionality.
@@ -123,6 +123,10 @@ pub struct BtrfsDev {
 }
 
 impl BtrfsDev {
+  /// 109 MiB seems to be the current lowest size of a btrfs volume.
+  /// Give it some more.
+  pub const DEFAULT_SIZE: usize = 128 * 1024 * 1024;
+
   /// Create a new btrfs loop back device with the provided size (in
   /// bytes).
   pub fn new(size: usize) -> Result<Self> {
@@ -135,9 +139,7 @@ impl BtrfsDev {
   /// Create a new btrfs loop back device with the default size (which
   /// is close to the supported minimum).
   pub fn with_default() -> Result<Self> {
-    // 109 MiB seems to be the current lowest size of a btrfs volume.
-    // Give it some more.
-    Self::new(128 * 1024 * 1024)
+    Self::new(Self::DEFAULT_SIZE)
   }
 
   /// Retrieve the btrfs file system's path.

@@ -388,9 +388,14 @@ where
     )
   })?;
 
-  let () = evaluate(&output1, command1, args1)?;
-  let () = evaluate(&output2, command2, args2)?;
-  Ok(())
+  let result1 = evaluate(&output1, command1, args1);
+  let result2 = evaluate(&output2, command2, args2);
+
+  match (result1, result2) {
+    (Ok(()), Ok(())) => Ok(()),
+    (Err(err1), Err(err2)) => Err(err1.context(err2)),
+    (Err(err), _) | (_, Err(err)) => Err(err),
+  }
 }
 
 
@@ -621,5 +626,40 @@ mod tests {
     let path = dir.join("foobar");
     let real = canonicalize_non_strict(&path).unwrap();
     assert_eq!(real, path);
+  }
+
+  /// Check that a pipeline of two succeeding commands succeeds.
+  #[test]
+  fn pipeline_errors() {
+    let result = pipeline(
+      "sh",
+      ["-c", "echo test123"],
+      "sh",
+      ["-c", "read line; [ \"$line\" = test123 ]"],
+    );
+    assert!(result.is_ok(), "{result:?}");
+  }
+
+  /// Check that the failure in a pipeline of commands are reported as
+  /// expected.
+  #[test]
+  fn pipeline_receiver_failure() {
+    let err = pipeline("sh", ["-c", "echo test456"], "sh", ["-c", "exit 9"]).unwrap_err();
+    assert!(err.to_string().contains("exit-status (9)"), "{err}");
+
+    let err = pipeline("sh", ["-c", "exit 3"], "sh", ["-c", "cat >/dev/null"]).unwrap_err();
+    assert!(err.to_string().contains("exit-status (3)"), "{err}");
+
+    let err = pipeline("sh", ["-c", "exec cat /dev/zero"], "sh", ["-c", "exit 7"]).unwrap_err();
+    // The second command is what went "wrong", so it is what we report.
+    let report = err.to_string();
+    assert!(report.contains("exit-status (7)"), "{report}");
+    assert!(!report.contains("signal"), "{report}");
+
+    // The first command will end up reporting a `SIGPIPE` issue and
+    // should be in there as well.
+    let chain = format!("{err:?}");
+    assert!(chain.contains("exit-status (7)"), "{chain}");
+    assert!(chain.contains("signal 13"), "{chain}");
   }
 }

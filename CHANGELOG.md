@@ -1,3 +1,8 @@
+Unreleased
+----------
+- Improved error message for certain backup failures
+
+
 0.2.6
 -----
 - Fixed backup error when determined "parent" snapshot is present in
