@@ -1,5 +1,5 @@
-Unreleased
-----------
+0.2.7
+-----
 - Improved error message for certain backup failures
 
 
